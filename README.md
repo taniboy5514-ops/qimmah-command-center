@@ -25,3 +25,28 @@
 - All data lives in the browser (localStorage) — device-level, no server.
 - On a new device or browser, the app starts fresh (create the owner account again).
 - Use the Backup button (owner only) to download your data as JSON.
+
+## CEO Brain — Study Mode + Export Brain
+
+### Study Mode (nav: "CEO Brain")
+- Type any topic — a market, a tool, a competitor, a trend — and tap **Study this**.
+- The AI CEO researches the **live open web** using **Groq Compound** (`groq/compound`),
+  which has web search built in — zero extra keys or cost, it runs on the same free
+  Groq key as the chat. If Compound is unavailable on your key/model, it falls back
+  gracefully to `llama-3.3-70b-versatile` (trained knowledge only) and says so.
+- Each study session produces a structured brief: summary, key findings, recommended
+  actions for Qimmah Digital, and the web sources it used (with links).
+- Every brief is saved permanently into the CEO's **knowledge base** (persisted with
+  the rest of your data) and also posted into the AI CEO chat — and the CEO is told
+  what it has studied, so it remembers those topics in later conversations.
+
+### Export Brain (owner only)
+- Tap **Export Brain** in the top bar or inside the CEO Brain view.
+- Two files download:
+  - `qimmah-ceo-brain-YYYY-MM-DD.json` — the full brain: knowledge, insights, chat,
+    tasks, finance, contracts, leads — everything.
+  - `qimmah-ceo-brain-YYYY-MM-DD.md` — a human-readable report of every studied
+    topic with dates, key points, sources, recommended actions, insights, and a
+    business snapshot — readable on your Desktop without parsing JSON.
+- Files land in your **Downloads** folder — move them to your Desktop.
+- The original **Backup** button still exports the plain JSON only.
