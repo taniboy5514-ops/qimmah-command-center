@@ -1,0 +1,615 @@
+import { useState, useEffect, useRef } from "react";
+import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check } from "lucide-react";
+import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field } from "./shared.jsx";
+/* ============================================================
+   OPERATIONS RADAR — live view of what every agent is doing.
+   Lit entirely by real data: tasks In Progress burn bright,
+   Review and Backlog glow softer, idle agents stay dim.
+   ============================================================ */
+const RADAR_STATES = {
+  working: { color: "#FFB020", label: "Working now" },
+  review:  { color: "#22D3EE", label: "In review" },
+  queued:  { color: "#A78BFA", label: "Queued" },
+  idle:    { color: "#4C4766", label: "Standing by" },
+  off:     { color: "#2C2840", label: "Offline" },
+};
+
+export function OpsRadar({ S, busy }) {
+  const [open, setOpen] = useState(true);
+  const cx = 300, cy = 178;
+  const radii = { Alpha: 62, Beta: 88, Gamma: 114, Delta: 138, Epsilon: 158 };
+
+  const taskFor = (id, col) => S.tasks.find((t) => t.agentId === id && t.col === col);
+  const stateOf = (id) => {
+    if (S.agentsOff[id]) return "off";
+    if (taskFor(id, "In Progress")) return "working";
+    if (taskFor(id, "Review")) return "review";
+    if (taskFor(id, "Backlog")) return "queued";
+    return "idle";
+  };
+
+  const squadKeys = Object.keys(SQUAD_META);
+  const nodes = [];
+  for (const squad of squadKeys) {
+    const members = AGENTS.filter((a) => a.squad === squad);
+    members.forEach((a, i) => {
+      const angle = (i / members.length) * Math.PI * 2 - Math.PI / 2 + squadKeys.indexOf(squad) * 0.35;
+      nodes.push({
+        agent: a,
+        x: Math.round((cx + Math.cos(angle) * radii[squad]) * 10) / 10,
+        y: Math.round((cy + Math.sin(angle) * radii[squad]) * 10) / 10,
+        state: stateOf(a.id),
+      });
+    });
+  }
+  const workingNodes = nodes.filter((n) => n.state === "working");
+  const counts = nodes.reduce((acc, n) => { acc[n.state] = (acc[n.state] || 0) + 1; return acc; }, {});
+
+  return (
+    <Card glow style={{ marginBottom: 16, padding: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: open ? "1px solid rgba(255,255,255,0.07)" : "none", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD", display: "flex", alignItems: "center", gap: 7 }}>
+            <span className="q-blink" style={{ width: 7, height: 7, borderRadius: "50%", background: workingNodes.length ? "#FFB020" : "#4C4766", boxShadow: workingNodes.length ? "0 0 10px #FFB020" : "none" }} />
+            Operations Radar
+          </span>
+          <span style={{ fontSize: 11, color: "#8B86A3" }}>
+            <b style={{ color: "#FFB020" }}>{counts.working || 0}</b> working · <b style={{ color: "#22D3EE" }}>{counts.review || 0}</b> in review · <b style={{ color: "#A78BFA" }}>{counts.queued || 0}</b> queued · {(counts.idle || 0)} standing by{counts.off ? " · " + counts.off + " offline" : ""}
+          </span>
+        </div>
+        <button style={{ ...btnGhost, fontSize: 12, padding: "5px 12px" }} onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"}</button>
+      </div>
+      {open && (
+        <div>
+          <svg viewBox="0 0 600 356" style={{ width: "100%", height: "auto", display: "block", background: "radial-gradient(circle at 50% 50%, rgba(124,58,237,0.10), transparent 65%)" }}>
+            <defs>
+              <radialGradient id="coreGlow">
+                <stop offset="0%" stopColor="#FFB020" stopOpacity="0.9" />
+                <stop offset="45%" stopColor="#7C3AED" stopOpacity="0.55" />
+                <stop offset="100%" stopColor="#7C3AED" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="linkGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.1" />
+                <stop offset="100%" stopColor="#FFB020" stopOpacity="0.8" />
+              </linearGradient>
+            </defs>
+
+            <g opacity="0.35">
+              <circle cx={cx} cy={cy} r="170" fill="none" stroke="#7C3AED" strokeWidth="0.7" strokeDasharray="2 10">
+                <animateTransform attributeName="transform" type="rotate" from={"0 " + cx + " " + cy} to={"360 " + cx + " " + cy} dur="80s" repeatCount="indefinite" />
+              </circle>
+              <circle cx={cx} cy={cy} r="126" fill="none" stroke="#06B6D4" strokeWidth="0.6" strokeDasharray="14 22">
+                <animateTransform attributeName="transform" type="rotate" from={"360 " + cx + " " + cy} to={"0 " + cx + " " + cy} dur="110s" repeatCount="indefinite" />
+              </circle>
+            </g>
+            {Object.entries(radii).map(([sq, r]) => (
+              <circle key={sq} cx={cx} cy={cy} r={r} fill="none" stroke={SQUAD_META[sq].color} strokeOpacity="0.13" strokeWidth="1" />
+            ))}
+
+            {workingNodes.map((n) => (
+              <line key={"l" + n.agent.id} x1={cx} y1={cy} x2={n.x} y2={n.y} stroke="url(#linkGrad)" strokeWidth="1.1">
+                <animate attributeName="stroke-opacity" values="0.35;1;0.35" dur="2.4s" repeatCount="indefinite" />
+              </line>
+            ))}
+
+            <circle cx={cx} cy={cy} r="34" fill="url(#coreGlow)">
+              {busy && <animate attributeName="r" values="30;40;30" dur="1.2s" repeatCount="indefinite" />}
+            </circle>
+            <circle cx={cx} cy={cy} r="13" fill="#0B0713" stroke="#FFB020" strokeWidth="1.4" />
+            <circle cx={cx} cy={cy} r="5" fill="#FFB020">
+              <animate attributeName="opacity" values="1;0.4;1" dur={busy ? "0.7s" : "2.6s"} repeatCount="indefinite" />
+            </circle>
+            <text x={cx} y={cy + 30} textAnchor="middle" fontSize="9.5" fill="#C4B5FD" letterSpacing="2" fontFamily="'Space Grotesk', sans-serif">{busy ? "CEO THINKING" : "CEO CORE"}</text>
+
+            {nodes.map((n) => {
+              const st = RADAR_STATES[n.state];
+              const w = n.state === "working";
+              const wt = w ? taskFor(n.agent.id, "In Progress") : null;
+              return (
+                <g key={n.agent.id}>
+                  {w && <circle cx={n.x} cy={n.y} r="9" fill={st.color} opacity="0.22"><animate attributeName="r" values="7;12;7" dur="2s" repeatCount="indefinite" /></circle>}
+                  <circle cx={n.x} cy={n.y} r={w ? 4.4 : n.state === "idle" || n.state === "off" ? 2.4 : 3.4}
+                    fill={st.color} opacity={n.state === "off" ? 0.5 : 1}
+                    style={w ? { filter: "drop-shadow(0 0 4px " + st.color + ")" } : {}}>
+                    <title>{n.agent.code + " " + n.agent.name + " — " + st.label + (wt ? ": " + wt.title : "")}</title>
+                  </circle>
+                </g>
+              );
+            })}
+          </svg>
+
+          <div style={{ padding: "10px 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            {workingNodes.length === 0
+              ? <div style={{ fontSize: 12, color: "#8B86A3" }}>The fleet is standing by. Assign a task to an agent on the Tasks board and move it to In Progress — watch them light up and link to the core, live.</div>
+              : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {workingNodes.map((n) => {
+                    const t = taskFor(n.agent.id, "In Progress");
+                    return (
+                      <span key={n.agent.id} style={{ fontSize: 11.5, padding: "5px 12px", borderRadius: 20, background: "rgba(255,176,32,0.1)", border: "1px solid rgba(255,176,32,0.3)", color: "#FFD27A", display: "inline-flex", alignItems: "center", gap: 7 }}>
+                        <span className="q-blink" style={{ width: 5, height: 5, borderRadius: "50%", background: "#FFB020", display: "inline-block" }} />
+                        <b style={{ color: "#FFB020" }}>{n.agent.code}</b> {n.agent.name} → {t.title.length > 44 ? t.title.slice(0, 42) + "…" : t.title}
+                      </span>
+                    );
+                  })}
+                </div>}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ============================================================
+   AUTOPILOT — the CEO reviews the live business and acts.
+   Approve-first by default; full-auto applies immediately.
+   ============================================================ */
+export function AutopilotPanel({ S, up, log, user }) {
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(null);
+  const [open, setOpen] = useState(true);
+  const ap = S.autopilot || { auto: false, last: null };
+
+  async function run() {
+    if (running) return;
+    setRunning(true); setError(""); setPending(null);
+    try {
+      const sys = SYSTEM_PROMPT
+        + (user ? "\n\nCURRENT USER: " + user.name + " (" + user.role + " at Qimmah Digital)." : "")
+        + "\n\nLIVE BUSINESS STATE (real, current, from the Command Center):\n" + JSON.stringify(buildSnapshot(S))
+        + knowledgeNote(S)
+        + "\n\n" + TOOL_INSTRUCTIONS;
+      const prompt = "AUTOPILOT MODE. Review the live business state and act as the operating CEO. Reply with: (1) a briefing of 3-5 short lines covering the biggest risk, the biggest opportunity, and what you are doing about them right now; (2) an actions block with 2-6 concrete actions grounded in the state that move revenue toward the OMR " + REVENUE_TARGET + " monthly target. Prioritize new website leads (follow up fast), unpaid invoices, contracts near expiry, stalled or unassigned tasks, and an empty pipeline. If the business state is empty, your actions should set up the first real pipeline steps.";
+      const raw = await aiCall(S, sys, [{ role: "user", content: prompt }]);
+      const parsed = parseActions(raw);
+      const briefing = (parsed.clean || raw).slice(0, 1500);
+      if (ap.auto && parsed.actions && parsed.actions.length) {
+        const out = applyActions(parsed.actions, S, up, log);
+        up((s) => ({ ...s, autopilot: { ...(s.autopilot || {}), auto: true, last: { ts: Date.now(), briefing, results: out.results, links: out.links } } }));
+        log("autopilot", "Autopilot run: " + out.results.length + " actions applied automatically");
+      } else {
+        setPending({ briefing, actions: parsed.actions || [] });
+      }
+    } catch (e) {
+      setError(e && e.message ? e.message : "Autopilot could not reach the AI engine.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function approve() {
+    if (!pending) return;
+    const out = applyActions(pending.actions, S, up, log);
+    up((s) => ({ ...s, autopilot: { ...(s.autopilot || {}), last: { ts: Date.now(), briefing: pending.briefing, results: out.results, links: out.links } } }));
+    log("autopilot", "Autopilot actions approved: " + out.results.length + " applied");
+    setPending(null);
+  }
+
+  return (
+    <Card glow style={{ marginBottom: 16, padding: 0, overflow: "hidden", border: "1px solid rgba(255,176,32,0.25)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", flexWrap: "wrap", gap: 8, borderBottom: open ? "1px solid rgba(255,255,255,0.07)" : "none" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#FFB020", display: "flex", alignItems: "center", gap: 7 }}>
+          <Sparkles size={14} /> CEO Autopilot
+        </span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: ap.auto ? "#FFB020" : "#8B86A3", cursor: "pointer" }}>
+            <input type="checkbox" checked={!!ap.auto} style={{ accentColor: "#FFB020" }}
+              onChange={(e) => up((s) => ({ ...s, autopilot: { ...(s.autopilot || {}), auto: e.target.checked } }))} />
+            Full auto (apply without approval)
+          </label>
+          <button style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12.5, background: "linear-gradient(135deg,#B45309,#FFB020)", boxShadow: "0 0 18px rgba(255,176,32,0.3)" }} onClick={run} disabled={running}>
+            {running ? "Reviewing the business…" : "Run Autopilot"}
+          </button>
+          <button style={{ ...btnGhost, fontSize: 12, padding: "5px 12px" }} onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"}</button>
+        </div>
+      </div>
+      {open && (
+        <div style={{ padding: "12px 16px 14px" }}>
+          {error && <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5", fontSize: 12.5 }}>{error}</div>}
+
+          {pending && (
+            <div style={{ marginBottom: 12, padding: 12, borderRadius: 12, background: "rgba(255,176,32,0.07)", border: "1px solid rgba(255,176,32,0.3)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>Briefing</div>
+              <div style={{ fontSize: 13, color: "#E9E4FB", whiteSpace: "pre-wrap", lineHeight: 1.6, marginBottom: 10 }}>{pending.briefing}</div>
+              {pending.actions.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>{pending.actions.length} proposed action{pending.actions.length > 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7, marginBottom: 10 }}>
+                    {pending.actions.map((a, i) => <div key={i}>{"\u2022"} {describeAction(a)}</div>)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button style={{ ...btnPrimary, padding: "8px 16px", fontSize: 13 }} onClick={approve}><Check size={14} /> Approve and apply</button>
+                    <button style={btnGhost} onClick={() => setPending(null)}>Discard</button>
+                  </div>
+                </div>
+              ) : <div style={{ fontSize: 12, color: "#8B86A3" }}>No actions proposed this run.</div>}
+            </div>
+          )}
+
+          {!pending && ap.last && (
+            <div style={{ fontSize: 12.5, color: "#A5A0B8" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 5 }}>Last run · {timeAgo(ap.last.ts)}</div>
+              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, color: "#C9C4DC", marginBottom: 8 }}>{ap.last.briefing}</div>
+              {ap.last.results && ap.last.results.length > 0 && (
+                <div style={{ lineHeight: 1.7 }}>
+                  {ap.last.results.map((r, i) => <div key={i} style={{ color: "#9FE8C4" }}>{"\u2713"} {r}</div>)}
+                </div>
+              )}
+              {ap.last.links && ap.last.links.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {ap.last.links.map((l, i) => <a key={i} href={l.href} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!pending && !ap.last && (
+            <div style={{ fontSize: 12.5, color: "#8B86A3", lineHeight: 1.65 }}>
+              Tap Run Autopilot and the CEO reads your entire live business — revenue vs target, unpaid invoices, contracts near expiry, stalled tasks — then briefs you and executes real actions: creating and assigning tasks, drafting invoices, preparing client messages. Approve-first by default; flip Full auto to let it act instantly. Honest limit: it runs when you trigger it (a browser app cannot work while closed), and prepared messages always need your tap to send.
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ============================================================
+   AI CEO CHAT — direct Groq API, voice in/out, insights
+   ============================================================ */
+export function CEOChat({ S, up, log, user }) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [copied, setCopied] = useState("");
+  const scrollRef = useRef(null);
+  const recRef = useRef(null);
+  const audioRef = useRef(null);
+  const draftRef = useRef("");
+  draftRef.current = draft;
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [S.chat.length, busy]);
+
+  function stopAudio() {
+    try { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } } catch (e) {}
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {}
+    setSpeaking(false);
+  }
+
+  async function speak(text) {
+    stopAudio();
+    const clean = text.replace(/[*#_`>]/g, "").slice(0, 2500);
+    if (S.elKey) {
+      try {
+        const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + VOICE_IDS[S.elVoice], {
+          method: "POST",
+          headers: { "xi-api-key": S.elKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ text: clean, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = new Audio(url);
+          a.playbackRate = S.rate;
+          audioRef.current = a;
+          setSpeaking(true);
+          a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+          a.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+          await a.play();
+          return;
+        }
+      } catch (e) { /* fall through to browser voice */ }
+    }
+    try {
+      const u = new SpeechSynthesisUtterance(clean);
+      u.rate = S.rate;
+      u.onend = () => setSpeaking(false);
+      u.onerror = () => setSpeaking(false);
+      setSpeaking(true);
+      window.speechSynthesis.speak(u);
+    } catch (e) { setSpeaking(false); }
+  }
+
+  async function send(textArg) {
+    const text = (textArg || draft).trim();
+    if (!text || busy) return;
+    setDraft(""); setError("");
+    const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "" };
+    up((s) => ({ ...s, chat: [...s.chat, userMsg] }));
+    setBusy(true);
+    try {
+      const history = sanitizeHistory([...S.chat, userMsg].slice(-14));
+      const sys = SYSTEM_PROMPT
+        + (user ? "\n\nCURRENT USER: You are speaking with " + user.name + " (" + user.role + " at Qimmah Digital). Address them by name when natural." : "")
+        + "\n\nLIVE BUSINESS STATE (real, current, from the Command Center):\n" + JSON.stringify(buildSnapshot(S))
+        + knowledgeNote(S)
+        + "\n\n" + TOOL_INSTRUCTIONS;
+      const raw = await aiCall(S, sys, history);
+      const parsed = parseActions(raw);
+      const reply = parsed.clean || raw;
+      const aiMsg = { id: uid(), role: "assistant", content: reply, actions: parsed.actions || null, applied: false, links: [], ts: Date.now() };
+      const cat = classifyInsight(reply);
+      const insight = { id: uid(), cat, text: reply.replace(/[*#_`]/g, "").slice(0, 200), ts: Date.now() };
+      up((s) => ({
+        ...s,
+        chat: [...s.chat, aiMsg],
+        insights: [insight, ...s.insights].slice(0, 40),
+      }));
+      log("chat", "AI CEO answered " + (user ? user.name : "") + ": " + text.slice(0, 60));
+      if (S.autoSpeak) speak(reply);
+    } catch (e) {
+      const msg = e && e.message ? e.message : "";
+      setError(msg === "Failed to fetch" || !msg
+        ? "Couldn't reach the AI engine. Check your internet connection and try again."
+        : msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleMic() {
+    if (listening) {
+      try { recRef.current && recRef.current.stop(); } catch (e) {}
+      setListening(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setError("Voice input is not supported in this browser. Chrome, Edge or Safari work best."); return; }
+    setError("");
+    const rec = new SR();
+    recRef.current = rec;
+    rec.lang = "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onresult = (ev) => {
+      let t = "";
+      for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript;
+      setDraft(t);
+    };
+    rec.onend = () => {
+      setListening(false);
+      const finalText = draftRef.current.trim();
+      if (finalText) send(finalText);
+    };
+    rec.onerror = (ev) => { setListening(false); if (ev && ev.error === "not-allowed") setError("Microphone access was blocked. Allow the mic in your browser settings — or in this preview, test voice after deploying."); };
+    setListening(true);
+    try { rec.start(); } catch (e) { setListening(false); }
+  }
+
+  const quicks = [
+    "Which squad should handle a new restaurant client?",
+    "Plan the path from OMR 4,800 to OMR 19,800 monthly.",
+    "Draft next month's campaign focus for Army Burger.",
+    "Top 3 priorities for this week.",
+  ];
+
+  /* --- API key setup screen (deployed mode only; preview runs keyless) --- */
+  if (!S.groqKey && !IN_PREVIEW) {
+    return (
+      <div>
+        <SectionTitle eyebrow="AI CEO" title="Activate your AI CEO" sub="The AI CEO runs on Groq's Llama 3.3 70B — free tier available. Your key is stored only on this device and sent only to Groq." />
+        <Card glow style={{ maxWidth: 520 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+            <Sparkles size={20} style={{ color: PURPLE }} />
+            <div style={{ fontWeight: 600, fontSize: 15 }}>Connect Groq</div>
+          </div>
+          <ol style={{ margin: "0 0 16px", paddingLeft: 18, fontSize: 13.5, color: "#B8B3CC", lineHeight: 1.8 }}>
+            <li>Open <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: CYAN }}>console.groq.com/keys</a> and create a free key</li>
+            <li>Paste it below — it never leaves your browser except to Groq</li>
+          </ol>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              style={inputStyle} type="password" placeholder="gsk_..."
+              value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && keyDraft.trim()) { up((s) => ({ ...s, groqKey: keyDraft.trim() })); log("system", "Groq API key connected"); } }}
+            />
+            <button style={btnPrimary} onClick={() => { if (keyDraft.trim()) { up((s) => ({ ...s, groqKey: keyDraft.trim() })); log("system", "Groq API key connected"); } }}>
+              <Check size={15} /> Activate
+            </button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <OpsRadar S={S} busy={busy} />
+      <AutopilotPanel S={S} up={up} log={log} user={user} />
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "stretch" }}>
+      <div style={{ flex: "1 1 460px", minWidth: 300, display: "flex", flexDirection: "column", ...glass, overflow: "hidden" }}>
+        {/* Chat header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg,#7C3AED,#06B6D4)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 16px rgba(124,58,237,0.5)" }}>
+              <Sparkles size={17} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14.5 }}>AI CEO</div>
+              <div style={{ fontSize: 11.5, color: speaking ? CYAN : "#34D399", display: "flex", alignItems: "center", gap: 5 }}>
+                <span className={speaking ? "q-blink" : ""} style={{ width: 6, height: 6, borderRadius: "50%", background: speaking ? CYAN : "#34D399", display: "inline-block" }} />
+                {speaking ? "Speaking…" : IN_PREVIEW ? "Online · Claude (preview engine)" : "Online · Groq Llama 3.3 70B"}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {speaking && <button style={btnGhost} onClick={stopAudio}><VolumeX size={14} /> Stop</button>}
+            {S.chat.length > 0 && (
+              <button style={btnGhost} title="Start a new conversation (insights are kept)"
+                onClick={() => { stopAudio(); up((s) => ({ ...s, chat: [] })); log("chat", "Conversation cleared" + (user ? " by " + user.name : "")); }}>
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button style={btnGhost} onClick={() => up((s) => ({ ...s, autoSpeak: !s.autoSpeak }))} title="Auto-speak replies">
+              {S.autoSpeak ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            </button>
+            <button style={btnGhost} onClick={() => setShowVoice(!showVoice)}><Settings size={14} /></button>
+          </div>
+        </div>
+
+        {/* Voice settings */}
+        {showVoice && (
+          <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(124,58,237,0.05)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>Voice settings</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <Field label="ElevenLabs key (optional)">
+                <input style={inputStyle} type="password" placeholder="Leave empty to use browser voice" value={S.elKey} onChange={(e) => up((s) => ({ ...s, elKey: e.target.value.trim() }))} />
+              </Field>
+              <Field label="Voice preset">
+                <select style={{ ...inputStyle, cursor: "pointer" }} value={S.elVoice} onChange={(e) => up((s) => ({ ...s, elVoice: e.target.value }))}>
+                  {Object.keys(VOICE_IDS).map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <Field label={"Speed · " + S.rate.toFixed(1) + "x"}>
+                <input type="range" min="0.5" max="2" step="0.1" value={S.rate} onChange={(e) => up((s) => ({ ...s, rate: Number(e.target.value) }))} style={{ width: "100%", accentColor: PURPLE }} />
+              </Field>
+              <button style={btnGhost} onClick={() => speak("Marhaba Sultan. Qimmah Digital voice system is live and ready.")}><Volume2 size={14} /> Test voice</button>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 8 }}>
+              No ElevenLabs key? The built-in browser voice is used automatically — free, always available.
+              {IN_PREVIEW && " Note: in this preview, ElevenLabs is blocked by the sandbox, so the browser voice is always used. Your ElevenLabs key activates after you deploy."}
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12, minHeight: 320, maxHeight: 480 }}>
+          {S.chat.length === 0 && (
+            <div style={{ textAlign: "center", padding: "30px 10px" }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#E9E4FB", marginBottom: 6 }}>Marhaba{user ? ", " + user.name : ""} 👋</div>
+              <div style={{ fontSize: 13, color: "#A5A0B8", maxWidth: 400, margin: "0 auto 16px" }}>
+                Your AI CEO is live — full knowledge of all 60 agents, Oman market strategy, and the road to OMR 19,800/month. Ask anything, or tap the mic and speak.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                {quicks.map((q) => (
+                  <button key={q} style={{ ...btnGhost, fontSize: 12 }} onClick={() => send(q)}>{q}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {S.chat.map((m) => (
+            <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
+              <div style={{
+                padding: "10px 14px", borderRadius: 14, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap",
+                ...(m.role === "user"
+                  ? { background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", borderBottomRightRadius: 4 }
+                  : { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#E9E4FB", borderBottomLeftRadius: 4 }),
+              }}>
+                {m.content}
+              </div>
+              {m.role === "assistant" && m.actions && m.actions.length > 0 && (
+                <div style={{ marginTop: 6, padding: 10, borderRadius: 10, background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>
+                    {m.applied ? "Actions executed" : m.actions.length + " proposed action" + (m.actions.length > 1 ? "s" : "")}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#D8D3E8", lineHeight: 1.65 }}>
+                    {m.actions.map((a, i) => <div key={i}>{"\u2022"} {describeAction(a)}</div>)}
+                  </div>
+                  {!m.applied && (
+                    <button style={{ ...btnPrimary, marginTop: 8, padding: "7px 14px", fontSize: 12.5 }}
+                      onClick={() => {
+                        const out = applyActions(m.actions, S, up, log);
+                        up((s) => ({ ...s, chat: s.chat.map((x) => (x.id === m.id ? { ...x, applied: true, links: out.links } : x)) }));
+                      }}>
+                      <Check size={13} /> Apply now
+                    </button>
+                  )}
+                  {m.applied && m.links && m.links.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                      {m.links.map((l, i) => <a key={i} href={l.href} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
+                    </div>
+                  )}
+                </div>
+              )}
+              {m.role === "assistant" && (
+                <div style={{ display: "flex", gap: 10, marginTop: 5, paddingLeft: 4 }}>
+                  <button style={{ background: "none", border: "none", color: copied === m.id ? "#34D399" : "#8B86A3", cursor: "pointer", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4, padding: 0, fontFamily: "inherit" }}
+                    onClick={() => { try { navigator.clipboard.writeText(m.content); setCopied(m.id); setTimeout(() => setCopied(""), 1500); } catch (e) {} }}>
+                    <Copy size={12} /> {copied === m.id ? "Copied" : "Copy"}
+                  </button>
+                  <button style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", fontSize: 11.5, display: "flex", alignItems: "center", gap: 4, padding: 0, fontFamily: "inherit" }} onClick={() => speak(m.content)}>
+                    <Volume2 size={12} /> Play
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {busy && (
+            <div style={{ alignSelf: "flex-start", padding: "12px 16px", borderRadius: 14, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", gap: 5 }}>
+              <span className="q-dot" style={{ animationDelay: "0s" }} />
+              <span className="q-dot" style={{ animationDelay: "0.15s" }} />
+              <span className="q-dot" style={{ animationDelay: "0.3s" }} />
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div style={{ margin: "0 16px 10px", padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5", fontSize: 13 }}>
+            {error}
+          </div>
+        )}
+
+        {/* Composer */}
+        <div style={{ display: "flex", gap: 10, padding: 14, borderTop: "1px solid rgba(255,255,255,0.07)", alignItems: "center" }}>
+          <button onClick={toggleMic} title={listening ? "Stop listening" : "Speak to your AI CEO"}
+            style={{
+              width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0,
+              background: listening ? "linear-gradient(135deg,#EF4444,#DC2626)" : "linear-gradient(135deg,#7C3AED,#6D28D9)",
+              boxShadow: listening ? "0 0 24px rgba(239,68,68,0.6)" : "0 0 24px rgba(124,58,237,0.5)",
+              display: "flex", alignItems: "center", justifyContent: "center", position: "relative",
+            }}>
+            {listening && <span className="q-ring" />}
+            {listening
+              ? <span style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 22 }}>
+                  {[0,1,2,3,4,5,6].map((i) => <span key={i} className="q-bar" style={{ animationDelay: (i * 0.09) + "s" }} />)}
+                </span>
+              : <Mic size={22} color="#fff" />}
+          </button>
+          <input
+            style={{ ...inputStyle, flex: 1 }} placeholder={listening ? "Listening…" : "Ask your AI CEO anything…"}
+            value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          />
+          <button style={{ ...btnPrimary, padding: "12px 16px" }} onClick={() => send()} disabled={busy}>
+            <Send size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Insights panel */}
+      <div style={{ flex: "0 1 280px", minWidth: 240 }}>
+        <Card style={{ height: "100%" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>Extracted insights</div>
+            {S.insights.length > 0 && (
+              <button style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", padding: 0 }} title="Clear insights"
+                onClick={() => up((s) => ({ ...s, insights: [] }))}><Trash2 size={13} /></button>
+            )}
+          </div>
+          {S.insights.length === 0
+            ? <div style={{ fontSize: 12.5, color: "#8B86A3" }}>Insights are pulled automatically from every AI CEO answer and categorized as strategy, agents, market, finance or operations. Start a conversation to build your knowledge base.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 460, overflowY: "auto" }}>
+                {S.insights.map((i) => (
+                  <div key={i.id} style={{ padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: CYAN, fontWeight: 700 }}>{i.cat}</span>
+                      <span style={{ fontSize: 10, color: "#6B6685" }}>{timeAgo(i.ts)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#C9C4DC", lineHeight: 1.5 }}>{i.text}…</div>
+                  </div>
+                ))}
+              </div>}
+        </Card>
+      </div>
+      </div>
+    </div>
+  );
+}
