@@ -51,6 +51,14 @@ Squad Gamma (31-45, Intelligence): ${AGENT_NAMES.Gamma.join(", ")}.
 Squad Delta (46-55, Operations): ${AGENT_NAMES.Delta.join(", ")}.
 Squad Epsilon (56-60, Innovation): ${AGENT_NAMES.Epsilon.join(", ")}.
 
+HOW TO REACH THE BUSINESS AND TEAM:
+- Qimmah Digital WhatsApp Business: +968 9176 3555 (primary channel for clients and team)
+- Business phone: +968 7503 7654
+- Email: hello@qimmah.digital (backup: qimmahdigital@gmail.com)
+- Instagram: @qimmah.digital
+- Website: https://qimmah.digital
+- When asked to contact a worker, team member, client or the business, ALWAYS use the compose_whatsapp or compose_email action with the right number/email from this list or the TEAM DIRECTORY below. Never say you cannot contact people - prepare the message so the user can tap and send.
+
 STYLE: Direct, action-oriented, no fluff. Give concrete recommendations with numbers where possible. Reference specific agents by code and name when recommending deployments. Sultan values speed, real results, and clear next steps. Keep answers tight — short paragraphs or short lists.`;
 
 export const VOICE_IDS = {
@@ -67,6 +75,12 @@ export const DEFAULT_STATE = {
   autopilot: { auto: false, last: null },
   leads: [], bridge: { url: "", key: "" },
   knowledge: [], // CEO Brain — every topic the AI CEO has studied, kept forever
+  memory: [], // Long-term memory — facts the AI CEO chose to keep forever
+  contacts: [ // Directory the AI CEO uses to reach workers, clients and the business
+    { id: "c-wa", name: "Qimmah Digital WhatsApp Business", role: "Business channel", phone: "96891763555", email: "" },
+    { id: "c-phone", name: "Qimmah Digital Phone", role: "Business channel", phone: "96875037654", email: "" },
+    { id: "c-email", name: "Qimmah Digital Email", role: "Business channel", phone: "", email: "hello@qimmah.digital" },
+  ],
 };
 
 /* Device-level PIN hashing — keeps PINs out of plain sight in storage.
@@ -129,6 +143,28 @@ export function knowledgeNote(S) {
     + ". Draw on these study briefs when relevant; if the founder asks about a studied topic, answer from what you learned and mention that you studied it.";
 }
 
+/* Long-term memory: facts the AI CEO saved with remember_fact — survives new conversations. */
+export function memoryNote(S) {
+  const m = S.memory || [];
+  if (m.length === 0) return "";
+  return "\n\nLONG-TERM MEMORY (facts you chose to remember from past conversations — treat them as true and use them naturally):\n"
+    + m.slice(-25).map((f) => "- " + f.text).join("\n");
+}
+
+/* Team directory: who works here and how to reach them. */
+export function teamNote(S) {
+  const users = (S.users || []).map((u) => u.name + " (" + u.role + ")");
+  const contacts = S.contacts || [];
+  let note = "\n\nTEAM DIRECTORY: People with Command Center access: " + (users.length ? users.join(", ") : "none yet") + ".";
+  if (contacts.length) {
+    note += " Saved contacts: " + contacts.map((c) => c.name
+      + (c.phone ? " — WhatsApp/phone +" + c.phone : "")
+      + (c.email ? " — email " + c.email : "")).join("; ") + ".";
+  }
+  note += " To contact any of them, use the compose_whatsapp or compose_email action with these exact details. If a worker's contact is missing, ask the user for it and save it with save_contact.";
+  return note;
+}
+
 export const TOOL_INSTRUCTIONS = `TOOLS: You can take real actions inside the Command Center by ending your reply with a fenced json block:
 \`\`\`json
 {"actions":[{"type":"create_task","title":"...","priority":"High","agentCode":"Agent-02"}]}
@@ -140,7 +176,9 @@ Available actions (max 6 per reply):
 - {"type":"add_opportunity","segment":string,"note":string optional}
 - {"type":"compose_whatsapp","phone":"digits with country code","message":string}
 - {"type":"compose_email","to":string,"subject":string,"body":string}
-RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. Keep the visible text of your reply free of JSON.`;
+- {"type":"remember_fact","fact":string} — permanently save something worth remembering long-term (a decision, a client detail, a number, a preference)
+- {"type":"save_contact","name":string,"phone":string optional,"email":string optional,"note":string optional} — save how to reach a worker or client so you can contact them later
+RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Keep the visible text of your reply free of JSON.`;
 
 export function parseActions(text) {
   let actions = null;
@@ -167,6 +205,8 @@ export function describeAction(a) {
   if (a.type === "add_opportunity") return "Log opportunity: " + a.segment;
   if (a.type === "compose_whatsapp") return "Prepare WhatsApp message" + (a.phone ? " for +" + a.phone : "");
   if (a.type === "compose_email") return "Prepare email to " + a.to;
+  if (a.type === "remember_fact") return "Remember: " + String(a.fact || "").slice(0, 80);
+  if (a.type === "save_contact") return "Save contact: " + String(a.name || "");
   return "Unrecognized action (skipped)";
 }
 
@@ -211,6 +251,18 @@ export function applyActions(actions, S, up, log) {
         links.push({ kind: "Email", href, label: "Open email to " + String(a.to).trim() });
         log("autopilot", "Email prepared for " + a.to);
         results.push("Email prepared for " + a.to);
+      } else if (a.type === "remember_fact" && a.fact) {
+        const fact = String(a.fact).slice(0, 200);
+        up((s) => ({ ...s, memory: [...(s.memory || []).filter((f) => f.text !== fact), { id: uid(), text: fact, ts: Date.now() }].slice(-60) }));
+        log("system", "Memory saved: " + fact.slice(0, 60));
+        results.push("Remembered forever: " + fact);
+      } else if (a.type === "save_contact" && a.name && (a.phone || a.email)) {
+        const phone = String(a.phone || "").replace(/[^0-9]/g, "");
+        const email = String(a.email || "").trim().slice(0, 80);
+        const cname = String(a.name).slice(0, 60);
+        up((s) => ({ ...s, contacts: [...(s.contacts || []).filter((c) => c.name.toLowerCase() !== cname.toLowerCase()), { id: uid(), name: cname, role: String(a.note || "Contact").slice(0, 40), phone, email }] }));
+        log("system", "Contact saved: " + cname);
+        results.push("Contact saved: " + cname + (phone ? " +" + phone : "") + (email ? " " + email : ""));
       }
     } catch (e) { /* skip malformed action, never crash the run */ }
   });
@@ -345,6 +397,19 @@ export function classifyInsight(text) {
   if (/(oman|gcc|market|competitor|client|customer|restaurant)/.test(t)) return "market";
   if (/(process|workflow|automat|task|operation)/.test(t)) return "operations";
   return "strategy";
+}
+
+/* Pick a female browser voice for the AI CEO — the free fallback when no
+   ElevenLabs key is set. Prefers explicit female voices, avoids known male ones. */
+export function pickFemaleVoice() {
+  try {
+    const vs = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    const en = vs.filter((v) => (v.lang || "").toLowerCase().startsWith("en"));
+    const pool = en.length ? en : vs;
+    return pool.find((v) => /female|zira|samantha|susan|victoria|karen|moira|tessa|fiona|serena|allison|ava|joelle|shelley|kate|stephanie|catherine|aria|jenny|emma|libby|sonia|natasha/i.test(v.name))
+      || pool.find((v) => !/\bmale\b|david|mark|\balex\b|fred|daniel|george|james|\bguy\b|ryan|brian|eric|thomas|arthur|aaron/i.test(v.name))
+      || null;
+  } catch (e) { return null; }
 }
 
 /* ---------- Shared styles ---------- */

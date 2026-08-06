@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field } from "./shared.jsx";
+import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field } from "./shared.jsx";
 /* ============================================================
    OPERATIONS RADAR — live view of what every agent is doing.
    Lit entirely by real data: tasks In Progress burn bright,
@@ -157,7 +157,7 @@ export function AutopilotPanel({ S, up, log, user }) {
       const sys = SYSTEM_PROMPT
         + (user ? "\n\nCURRENT USER: " + user.name + " (" + user.role + " at Qimmah Digital)." : "")
         + "\n\nLIVE BUSINESS STATE (real, current, from the Command Center):\n" + JSON.stringify(buildSnapshot(S))
-        + knowledgeNote(S)
+        + knowledgeNote(S) + memoryNote(S) + teamNote(S)
         + "\n\n" + TOOL_INSTRUCTIONS;
       const prompt = "AUTOPILOT MODE. Review the live business state and act as the operating CEO. Reply with: (1) a briefing of 3-5 short lines covering the biggest risk, the biggest opportunity, and what you are doing about them right now; (2) an actions block with 2-6 concrete actions grounded in the state that move revenue toward the OMR " + REVENUE_TARGET + " monthly target. Prioritize new website leads (follow up fast), unpaid invoices, contracts near expiry, stalled or unassigned tasks, and an empty pipeline. If the business state is empty, your actions should set up the first real pipeline steps.";
       const raw = await aiCall(S, sys, [{ role: "user", content: prompt }]);
@@ -276,6 +276,15 @@ export function CEOChat({ S, up, log, user }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [S.chat.length, busy]);
 
+  // Browser voices load asynchronously — warm the list so the female voice is ready on first speak.
+  useEffect(() => {
+    try {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    } catch (e) {}
+  }, []);
+
   function stopAudio() {
     try { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } } catch (e) {}
     try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {}
@@ -309,6 +318,9 @@ export function CEOChat({ S, up, log, user }) {
     try {
       const u = new SpeechSynthesisUtterance(clean);
       u.rate = S.rate;
+      u.pitch = 1.05;
+      const fv = pickFemaleVoice();
+      if (fv) u.voice = fv;
       u.onend = () => setSpeaking(false);
       u.onerror = () => setSpeaking(false);
       setSpeaking(true);
@@ -324,11 +336,11 @@ export function CEOChat({ S, up, log, user }) {
     up((s) => ({ ...s, chat: [...s.chat, userMsg] }));
     setBusy(true);
     try {
-      const history = sanitizeHistory([...S.chat, userMsg].slice(-14));
+      const history = sanitizeHistory([...S.chat, userMsg].slice(-40));
       const sys = SYSTEM_PROMPT
         + (user ? "\n\nCURRENT USER: You are speaking with " + user.name + " (" + user.role + " at Qimmah Digital). Address them by name when natural." : "")
         + "\n\nLIVE BUSINESS STATE (real, current, from the Command Center):\n" + JSON.stringify(buildSnapshot(S))
-        + knowledgeNote(S)
+        + knowledgeNote(S) + memoryNote(S) + teamNote(S)
         + "\n\n" + TOOL_INSTRUCTIONS;
       const raw = await aiCall(S, sys, history);
       const parsed = parseActions(raw);
@@ -461,7 +473,7 @@ export function CEOChat({ S, up, log, user }) {
               <Field label="ElevenLabs key (optional)">
                 <input style={inputStyle} type="password" placeholder="Leave empty to use browser voice" value={S.elKey} onChange={(e) => up((s) => ({ ...s, elKey: e.target.value.trim() }))} />
               </Field>
-              <Field label="Voice preset">
+              <Field label="Voice preset (all female AI voices)">
                 <select style={{ ...inputStyle, cursor: "pointer" }} value={S.elVoice} onChange={(e) => up((s) => ({ ...s, elVoice: e.target.value }))}>
                   {Object.keys(VOICE_IDS).map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
                 </select>
@@ -474,7 +486,7 @@ export function CEOChat({ S, up, log, user }) {
               <button style={btnGhost} onClick={() => speak("Marhaba Sultan. Qimmah Digital voice system is live and ready.")}><Volume2 size={14} /> Test voice</button>
             </div>
             <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 8 }}>
-              No ElevenLabs key? The built-in browser voice is used automatically — free, always available.
+              No ElevenLabs key? A female built-in browser voice is used automatically — free, always available.
               {IN_PREVIEW && " Note: in this preview, ElevenLabs is blocked by the sandbox, so the browser voice is always used. Your ElevenLabs key activates after you deploy."}
             </div>
           </div>
@@ -588,7 +600,10 @@ export function CEOChat({ S, up, log, user }) {
       <div style={{ flex: "0 1 280px", minWidth: 240 }}>
         <Card style={{ height: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>Extracted insights</div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>
+              Extracted insights
+              {(S.memory || []).length > 0 && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: 0.5, color: "#34D399", textTransform: "none" }}>+ {(S.memory || []).length} long-term {(S.memory || []).length === 1 ? "memory" : "memories"}</span>}
+            </div>
             {S.insights.length > 0 && (
               <button style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", padding: 0 }} title="Clear insights"
                 onClick={() => up((s) => ({ ...s, insights: [] }))}><Trash2 size={13} /></button>
