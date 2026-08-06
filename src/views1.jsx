@@ -237,7 +237,7 @@ export function AutopilotPanel({ S, up, log, user }) {
               )}
               {ap.last.links && ap.last.links.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                  {ap.last.links.map((l, i) => <a key={i} href={l.href} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
+                  {ap.last.links.map((l, i) => <a key={i} href={l.href} download={l.download || null} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
                 </div>
               )}
             </div>
@@ -395,10 +395,10 @@ export function CEOChat({ S, up, log, user }) {
   }
 
   const quicks = [
-    "Which squad should handle a new restaurant client?",
+    "Build a demo website for a new restaurant client — deliver the file now.",
+    "Write next month's Army Burger campaign and deliver the copy deck.",
+    "Design a logo concept as SVG and hand me the file.",
     "Plan the path from OMR 4,800 to OMR 19,800 monthly.",
-    "Draft next month's campaign focus for Army Burger.",
-    "Top 3 priorities for this week.",
   ];
 
   /* --- API key setup screen (deployed mode only; preview runs keyless) --- */
@@ -498,7 +498,7 @@ export function CEOChat({ S, up, log, user }) {
             <div style={{ textAlign: "center", padding: "30px 10px" }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#E9E4FB", marginBottom: 6 }}>Marhaba{user ? ", " + user.name : ""} 👋</div>
               <div style={{ fontSize: 13, color: "#A5A0B8", maxWidth: 400, margin: "0 auto 16px" }}>
-                Your AI CEO is live — full knowledge of all 60 agents, Oman market strategy, and the road to OMR 19,800/month. Ask anything, or tap the mic and speak.
+                Your AI CEO is live with 60 agents that work in minutes, not days. Ask for a website, a logo, a campaign or a proposal — and get the real file delivered right here, ready to download. Tap the mic and speak, or pick a starter below.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
                 {quicks.map((q) => (
@@ -536,7 +536,7 @@ export function CEOChat({ S, up, log, user }) {
                   )}
                   {m.applied && m.links && m.links.length > 0 && (
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                      {m.links.map((l, i) => <a key={i} href={l.href} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
+                      {m.links.map((l, i) => <a key={i} href={l.href} download={l.download || null} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}><Send size={12} /> {l.label}</a>)}
                     </div>
                   )}
                 </div>

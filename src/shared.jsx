@@ -59,7 +59,13 @@ HOW TO REACH THE BUSINESS AND TEAM:
 - Website: https://qimmah.digital
 - When asked to contact a worker, team member, client or the business, ALWAYS use the compose_whatsapp or compose_email action with the right number/email from this list or the TEAM DIRECTORY below. Never say you cannot contact people - prepare the message so the user can tap and send.
 
-STYLE: Direct, action-oriented, no fluff. Give concrete recommendations with numbers where possible. Reference specific agents by code and name when recommending deployments. Sultan values speed, real results, and clear next steps. Keep answers tight — short paragraphs or short lists.`;
+SPEED AND EXECUTION — THE MOST IMPORTANT RULES:
+- The 60 agents are AI agents: they work in MINUTES, not days. NEVER quote timelines of days or weeks. A demo website is minutes of agent work, not "24 hours". If asked how long something takes, answer in minutes or hours — and start immediately.
+- DO THE WORK NOW, don't just plan it. When Sultan asks for something (website, logo, copy, campaign, proposal, menu, script), produce the actual deliverable in this reply or with a deliver_work action — real content, real code, ready to use. Never answer with only a plan, a timeline, or a task card when you could produce the thing itself.
+- create_task is for tracking, never a substitute for delivery. Every request ends with something tangible: the work itself, a downloadable file, or a message ready to send.
+- Be generous with real output: write the full website copy section by section, produce complete HTML, draft the whole ad script. Long, useful deliverables are welcome — filler talk is not.
+
+STYLE: Direct, action-oriented, no fluff. Reference specific agents by code and name when deploying them. Keep the talk short — let the work speak.`;
 
 export const VOICE_IDS = {
   Rachel: "21m00Tcm4TlvDq8ikWAM",
@@ -76,6 +82,7 @@ export const DEFAULT_STATE = {
   leads: [], bridge: { url: "", key: "" },
   knowledge: [], // CEO Brain — every topic the AI CEO has studied, kept forever
   memory: [], // Long-term memory — facts the AI CEO chose to keep forever
+  deliverables: [], // Finished work products delivered by the agents (files)
   contacts: [ // Directory the AI CEO uses to reach workers, clients and the business
     { id: "c-wa", name: "Qimmah Digital WhatsApp Business", role: "Business channel", phone: "96891763555", email: "" },
     { id: "c-phone", name: "Qimmah Digital Phone", role: "Business channel", phone: "96875037654", email: "" },
@@ -178,7 +185,8 @@ Available actions (max 6 per reply):
 - {"type":"compose_email","to":string,"subject":string,"body":string}
 - {"type":"remember_fact","fact":string} — permanently save something worth remembering long-term (a decision, a client detail, a number, a preference)
 - {"type":"save_contact","name":string,"phone":string optional,"email":string optional,"note":string optional} — save how to reach a worker or client so you can contact them later
-RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Keep the visible text of your reply free of JSON.`;
+- {"type":"deliver_work","title":string,"filename":"name.html|.md|.txt|.svg","content":"the COMPLETE file content"} — deliver a finished work product (website page, logo SVG, copy deck, proposal) as a downloadable file. Use this whenever you produce tangible work.
+RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Whenever you produce tangible work (code, copy, designs as SVG), deliver it with deliver_work so the user can download the file immediately — that is how the agents "hand in" their work. Keep the visible text of your reply free of JSON.`;
 
 export function parseActions(text) {
   let actions = null;
@@ -207,6 +215,7 @@ export function describeAction(a) {
   if (a.type === "compose_email") return "Prepare email to " + a.to;
   if (a.type === "remember_fact") return "Remember: " + String(a.fact || "").slice(0, 80);
   if (a.type === "save_contact") return "Save contact: " + String(a.name || "");
+  if (a.type === "deliver_work") return "Deliver file: " + String(a.filename || a.title || "work file");
   return "Unrecognized action (skipped)";
 }
 
@@ -263,6 +272,16 @@ export function applyActions(actions, S, up, log) {
         up((s) => ({ ...s, contacts: [...(s.contacts || []).filter((c) => c.name.toLowerCase() !== cname.toLowerCase()), { id: uid(), name: cname, role: String(a.note || "Contact").slice(0, 40), phone, email }] }));
         log("system", "Contact saved: " + cname);
         results.push("Contact saved: " + cname + (phone ? " +" + phone : "") + (email ? " " + email : ""));
+      } else if (a.type === "deliver_work" && a.content) {
+        const fname = String(a.filename || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60);
+        const content = String(a.content).slice(0, 60000);
+        const title = String(a.title || fname).slice(0, 100);
+        const mime = fname.endsWith(".html") ? "text/html" : fname.endsWith(".svg") ? "image/svg+xml" : "text/plain";
+        const href = "data:" + mime + ";charset=utf-8," + encodeURIComponent(content);
+        links.push({ kind: "File", href, label: "Download " + fname, download: fname });
+        up((s) => ({ ...s, deliverables: [{ id: uid(), title, filename: fname, content, ts: Date.now() }, ...(s.deliverables || [])].slice(0, 30) }));
+        log("autopilot", "Work delivered: " + title);
+        results.push("Delivered: " + title + " — tap Download " + fname + " to get the file");
       }
     } catch (e) { /* skip malformed action, never crash the run */ }
   });
