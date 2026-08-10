@@ -20,12 +20,45 @@ const SUGGESTIONS = [
 ];
 
 /* ============ STATE ============ */
+const DM_STARTER_RULES = [
+  { id: "dmr1", keyword: "price", channel: "Both", enabled: true, dailyCap: 30,
+    reply: "Salam {name}! Here are our OMR prices: Websites from OMR 250 · Instagram automation from OMR 120/mo · Full social management from OMR 180/mo. Want a custom quote? Just tell me what you need." },
+  { id: "dmr2", keyword: "book", channel: "Both", enabled: true, dailyCap: 30,
+    reply: "Great, {name}! You can grab a free 15-min Zoom slot with Sultan here: {service}. Pick any time that suits you — looking forward to it!" },
+  { id: "dmr3", keyword: "hi", channel: "Both", enabled: true, dailyCap: 40,
+    reply: "Ahlan {name}! Welcome to Qimmah Digital. We build: 1) Websites 2) Instagram automation 3) WhatsApp funnels 4) Social media management. Reply with a number and I'll send details." },
+  { id: "dmr4", keyword: "human", channel: "Both", enabled: true, dailyCap: 50,
+    reply: "Of course {name} — Sultan will reply to you personally within the hour. Thanks for your patience!" }
+];
+function defaultDmloop() {
+  return {
+    pauseAll: false,
+    cooldownMin: 15,
+    businessHoursOnly: false,
+    bhStart: "09:00",
+    bhEnd: "21:00",
+    rules: DM_STARTER_RULES.map(r => Object.assign({}, r)),
+    leads: [],
+    sentLog: {} // "YYYY-MM-DD:ruleId" -> count  (local safety bookkeeping)
+  };
+}
+function ensureDmloop() {
+  state.dmloop = Object.assign(defaultDmloop(), state.dmloop || {});
+  if (!Array.isArray(state.dmloop.rules) || state.dmloop.rules.length === 0) state.dmloop.rules = DM_STARTER_RULES.map(r => Object.assign({}, r));
+  if (!Array.isArray(state.dmloop.leads)) state.dmloop.leads = [];
+  if (typeof state.dmloop.sentLog !== "object" || !state.dmloop.sentLog) state.dmloop.sentLog = {};
+}
 function defaultState() {
   return {
-    settings: { groqKey: "", supaUrl: "", supaKey: "", syncOn: false, lastBackup: null, lastSync: null },
+    settings: {
+      groqKey: "", supaUrl: "", supaKey: "", syncOn: false, lastBackup: null, lastSync: null,
+      voiceOn: true, voiceName: "", elevenKey: "", elevenVoice: "21m00Tcm4TlvDq8ikWAM",
+      bookingLink: "", lastDaemon: null
+    },
     finance: [],
     tasks: [],
     studies: [],
+    dmloop: defaultDmloop(),
     pipeline: [{ id: uid(), name: "Al Zawiya Turkish Restaurant", value: 850, stage: "Deal", notes: "Website + Instagram automation package. Waiting on final menu content." }],
     chat: [],
     seeded: true
@@ -45,6 +78,7 @@ function load() {
       const parsed = JSON.parse(raw);
       state = Object.assign(defaultState(), parsed);
       state.settings = Object.assign(defaultState().settings, parsed.settings || {});
+      ensureDmloop();
     }
   } catch (e) { console.warn("load failed", e); }
 }
@@ -88,7 +122,7 @@ async function syncPull() {
     const rows = await res.json();
     if (rows && rows[0] && rows[0].data) {
       state = Object.assign(defaultState(), rows[0].data);
-      ensureAgents(); runDailyImprovement();
+      ensureDmloop(); ensureAgents(); runDailyImprovement();
       save(); render();
       toast("Restored from Supabase ✓");
     } else toast("No cloud backup found yet");
@@ -114,6 +148,119 @@ async function groq(messages, maxTokens) {
   return j.choices[0].message.content;
 }
 const CEO_SYSTEM = "You are the AI CEO of Qimmah Digital (قمة ديجيتال), a digital agency in Oman run by one founder (Sultan) with 60 AI agents in 5 squads (Alpha–Epsilon). Be direct, numbers-driven, always think in OMR currency, focus relentlessly on revenue toward the OMR 19,800/month target. Give concrete, actionable answers. No fluff.";
+
+/* ============ AI LADY VOICE ============ */
+const ELEVEN_MODEL = "eleven_turbo_v2_5";
+const FEMALE_HINTS = ["samantha", "victoria", "karen", "moira", "zira", "susan", "allison", "ava", "serena", "kate", "stephanie", "female", "woman", "tessa", "fiona", "martha", "shelley", "sandy", "nicky", "joelle", "google uk english female", "google us english"];
+let voicesCache = [];
+function refreshVoices() {
+  if (!("speechSynthesis" in window)) return;
+  voicesCache = speechSynthesis.getVoices() || [];
+}
+if ("speechSynthesis" in window) {
+  refreshVoices();
+  speechSynthesis.onvoiceschanged = refreshVoices;
+}
+function pickFemaleVoice() {
+  if (!voicesCache.length) refreshVoices();
+  const pref = state.settings.voiceName;
+  if (pref) {
+    const v = voicesCache.find(v => v.name === pref);
+    if (v) return v;
+  }
+  const en = voicesCache.filter(v => /^en(-|_)?(US|GB|AU|IE)?/i.test(v.lang));
+  const pool = en.length ? en : voicesCache;
+  for (const hint of FEMALE_HINTS) {
+    const v = pool.find(v => v.name.toLowerCase().includes(hint));
+    if (v) return v;
+  }
+  return pool[0] || null;
+}
+function speakBrowser(text, onend) {
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickFemaleVoice();
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = 1.02; u.pitch = 1.15; // slightly higher pitch -> feminine
+    if (onend) u.onend = onend;
+    speechSynthesis.speak(u);
+  } catch (e) { console.warn("speechSynthesis failed", e); if (onend) onend(); }
+}
+async function speakElevenLabs(text) {
+  const key = state.settings.elevenKey;
+  const voiceId = state.settings.elevenVoice || "21m00Tcm4TlvDq8ikWAM"; // Rachel (female)
+  const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + encodeURIComponent(voiceId), {
+    method: "POST",
+    headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+    body: JSON.stringify({ text, model_id: ELEVEN_MODEL, voice_settings: { stability: 0.45, similarity_boost: 0.75 } })
+  });
+  if (!res.ok) throw new Error("ElevenLabs HTTP " + res.status);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = () => URL.revokeObjectURL(url);
+  await audio.play();
+}
+// Speaks AI reply text aloud with a female voice. Only the reply text is ever sent to ElevenLabs.
+async function speakReply(text) {
+  if (!state.settings.voiceOn) return;
+  const clean = String(text).replace(/[*_#`>]/g, "").slice(0, 1200);
+  if (!clean.trim()) return;
+  if (state.settings.elevenKey) {
+    try { await speakElevenLabs(clean); return; }
+    catch (e) {
+      console.warn("ElevenLabs TTS failed, falling back to browser voice:", e);
+      toast("ElevenLabs failed — using browser voice");
+    }
+  }
+  if ("speechSynthesis" in window) speakBrowser(clean);
+}
+function testVoice() {
+  const sample = "Hello Sultan, this is your AI CEO. Let's make some OMR today.";
+  if (state.settings.elevenKey) {
+    speakElevenLabs(sample).catch(e => { toast("ElevenLabs failed: " + e.message.slice(0, 60)); if ("speechSynthesis" in window) speakBrowser(sample); });
+  } else if ("speechSynthesis" in window) speakBrowser(sample);
+  else toast("Speech not supported on this browser");
+}
+
+/* --- Voice input (mic) --- */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null, listening = false;
+function stopListening() {
+  listening = false;
+  try { if (recog) recog.stop(); } catch (e) {}
+  const mic = document.getElementById("micBtn");
+  if (mic) mic.classList.remove("listening");
+}
+function startListening() {
+  if (!SpeechRec) { toast("Voice input not supported on this browser — on Safari enable it in Settings > Safari"); return; }
+  if (listening) { stopListening(); return; }
+  try {
+    recog = new SpeechRec();
+    recog.lang = "en-US";
+    recog.interimResults = true;
+    recog.continuous = false;
+    const mic = document.getElementById("micBtn");
+    const inp = document.getElementById("chatInput");
+    recog.onresult = e => {
+      let txt = "";
+      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript;
+      if (inp) inp.value = txt;
+      if (e.results[e.results.length - 1].isFinal && /\bsend\s*$/i.test(txt.trim())) {
+        const cleaned = txt.trim().replace(/\bsend\s*$/i, "").trim();
+        stopListening();
+        if (cleaned) sendChat(cleaned);
+      }
+    };
+    recog.onerror = e => { console.warn("speech recognition error", e.error); stopListening(); if (e.error === "not-allowed") toast("Mic permission denied"); };
+    recog.onend = stopListening;
+    recog.start();
+    listening = true;
+    if (mic) mic.classList.add("listening");
+    toast("Listening… speak now");
+  } catch (e) { console.warn(e); toast("Voice input failed on this browser"); }
+}
 
 /* ============ AGENT SELF-IMPROVEMENT ENGINE ============ */
 const AGENT_CODENAMES = ["Scout", "Nova", "Radar", "Sage", "Echo", "Blaze", "Atlas", "Pixel", "Quest", "Vista", "Orbit", "Zenith"];
@@ -244,6 +391,7 @@ const TABS = [
   { id: "ceo", label: "AI CEO" },
   { id: "finance", label: "Finance" },
   { id: "pipeline", label: "Pipeline" },
+  { id: "dmloop", label: "DM Loop" },
   { id: "tasks", label: "Tasks" },
   { id: "settings", label: "Settings" }
 ];
@@ -341,6 +489,7 @@ function viewAgents() {
     </div>
     <div class="note">Last training: ${esc(lastLabel)} · ${fmt(ast.totalDays)} total agent-days trained · average level ${ast.avgLevel.toFixed(1)}</div>
     <div class="note">Every day your laptop is on, all 60 agents gain XP and level up (100 XP per level). Missed days are caught up automatically — they kept working while you were away.</div>
+    ${state.settings.lastDaemon ? `<div class="note"><span class="pill g">Daemon last ran: ${esc(new Date(state.settings.lastDaemon).toLocaleString())}</span> — 24/7 laptop daemon is live (Settings → 24/7 Daemon).</div>` : `<div class="note">Tip: download the optional 24/7 daemon in Settings so agents train at midnight even with the browser closed.</div>`}
   </div>
   <div class="grid stats" style="margin-bottom:14px">
     ${SQUADS.map(sq => {
@@ -491,13 +640,25 @@ function viewCEO() {
     <div class="flex-between"><b>Chat with your AI CEO</b><span id="reuseBadge"></span></div>
     <div class="chat" id="chatBox">
       ${state.chat.length === 0 ? `<div class="empty">Ask anything — strategy, pricing, priorities.</div>` :
-        state.chat.map(m => `<div class="msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}</div>`).join("")}
+        state.chat.map((m, i) => `<div class="msg ${m.role === "user" ? "user" : "ai"}">${m.role === "ai" ? `<button class="speak-btn" data-speak="${i}" title="Replay voice">🔊</button>` : ""}${esc(m.content)}</div>`).join("")}
     </div>
     <div class="chatbar">
+      <button class="btn mic" id="micBtn" title="Voice input">🎤</button>
       <input id="chatInput" placeholder="e.g. How do I close OMR 2,000 this week?">
       <button class="btn primary" style="flex:0 0 auto" id="sendChat">Send</button>
     </div>
-    <div style="margin-top:10px"><button class="btn" id="briefing">☀ Daily Briefing — top 3 priorities</button></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn" id="briefing">☀ Daily Briefing — top 3 priorities</button>
+      <button class="btn ghost" id="shareBriefing">📤 Share briefing</button>
+    </div>
+    <div class="voice-row">
+      <button class="btn sm ${state.settings.voiceOn ? "primary" : "ghost"}" id="voiceToggle">${state.settings.voiceOn ? "🔊 Voice replies: ON" : "🔇 Voice replies: OFF"}</button>
+      <select id="voicePick" style="flex:1;min-width:140px;padding:7px 12px;font-size:12px;border-radius:10px">
+        <option value="">Auto female voice</option>
+        ${voicesCache.map(v => `<option value="${esc(v.name)}" ${state.settings.voiceName === v.name ? "selected" : ""}>${esc(v.name)} (${esc(v.lang)})</option>`).join("")}
+      </select>
+      <button class="btn sm" id="testVoice">Test voice</button>
+    </div>
   </div>`;
 }
 
@@ -543,6 +704,7 @@ async function sendChat(text) {
   }
   state.chat.push({ role: "ai", content: reply, usedStudies: used.length });
   save(); render();
+  speakReply(reply);
 }
 
 function viewFinance() {
@@ -618,6 +780,85 @@ function viewPipeline() {
   </div>`;
 }
 
+/* ============ DM LOOP ============ */
+function fillVars(tpl, name) {
+  return String(tpl)
+    .replace(/\{name\}/g, name || "there")
+    .replace(/\{service\}/g, state.settings.bookingLink || "qimmah.om/book")
+    .replace(/\{price\}/g, "OMR 250+");
+}
+function viewDmloop() {
+  ensureDmloop();
+  const D = state.dmloop;
+  return `
+  <h2 class="sec">Social DM Loop — Auto-Reply Builder</h2>
+  <div class="notice">⚠ <b>Don't get burned:</b> automation on Instagram/WhatsApp must comply with Meta &amp; WhatsApp policies — unofficial bots can get your accounts BANNED. Use these rules as human-approved drafts, and switch to the official <b>WhatsApp Business API</b> / <b>Instagram Graph API</b> before real production automation.</div>
+  <div class="card">
+    <div class="flex-between">
+      <b style="display:flex;align-items:center;gap:10px"><span class="pulse"></span> Loop status</b>
+      <button class="btn sm ${D.pauseAll ? "danger" : "primary"}" id="dmPause">${D.pauseAll ? "⏸ PAUSED — tap to resume" : "▶ LIVE — tap to pause all"}</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div><label>Cooldown between replies to same user (min)</label><input id="dmCooldown" type="number" min="0" value="${Number(D.cooldownMin) || 0}"></div>
+      <div><label>Business hours only</label>
+        <select id="dmBH">${["off", "on"].map(o => `<option value="${o}" ${D.businessHoursOnly === (o === "on") ? "selected" : ""}>${o === "on" ? "ON" : "OFF"}</option>`).join("")}</select></div>
+      <div><label>From</label><input id="dmBHStart" type="time" value="${esc(D.bhStart)}"></div>
+      <div><label>To</label><input id="dmBHEnd" type="time" value="${esc(D.bhEnd)}"></div>
+    </div>
+    <div class="note">Booking link used by the "book" rule is set in Settings. Current: <span class="mono">${esc(state.settings.bookingLink || "(not set — set it in Settings)")}</span></div>
+  </div>
+  <div class="card">
+    <b>Rules (${D.rules.length})</b>
+    <div style="margin-top:12px">
+      ${D.rules.map((r, i) => `
+      <div class="rule-card ${r.enabled && !D.pauseAll ? "" : "off"}">
+        <div class="flex-between">
+          <b>“${esc(r.keyword)}” <span class="pill c">${esc(r.channel)}</span></b>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label class="switch"><input type="checkbox" data-dmtoggle="${r.id}" ${r.enabled ? "checked" : ""}><span class="slider"></span></label>
+            <button class="btn sm ghost" data-dmup="${i}" ${i === 0 ? "disabled" : ""}>▲</button>
+            <button class="btn sm ghost" data-dmdown="${i}" ${i === D.rules.length - 1 ? "disabled" : ""}>▼</button>
+            <button class="btn sm ghost" data-dmdel="${r.id}">✕</button>
+          </div>
+        </div>
+        <div class="note" style="margin-top:6px">${esc(fillVars(r.reply, "Sara"))}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+          <span class="pill v">daily cap: ${Number(r.dailyCap) || "∞"}</span>
+          <button class="btn sm" data-dmedit="${r.id}">Edit</button>
+          <button class="btn sm primary" data-dmai="${r.id}">✨ Generate reply with AI</button>
+        </div>
+      </div>`).join("")}
+    </div>
+    <div class="row" style="margin-top:14px">
+      <div><label>Keyword / phrase</label><input id="dmKeyword" placeholder="e.g. price"></div>
+      <div><label>Channel</label><select id="dmChannel"><option>Both</option><option>Instagram</option><option>WhatsApp</option></select></div>
+      <div><label>Daily send cap</label><input id="dmCap" type="number" min="1" placeholder="30"></div>
+    </div>
+    <label>Reply template — variables: {name} {service} {price}</label>
+    <textarea id="dmReply" rows="3" placeholder="Salam {name}! ..."></textarea>
+    <button class="btn primary" id="dmAdd" style="margin-top:12px">+ Add rule</button>
+  </div>
+  <div class="card">
+    <b>Log incoming lead → Pipeline</b>
+    <div class="row" style="margin-top:10px">
+      <div><label>Name / handle</label><input id="leadName" placeholder="@restaurant_muscat"></div>
+      <div><label>Channel</label><select id="leadChannel"><option>Instagram</option><option>WhatsApp</option></select></div>
+      <div><label>Keyword matched</label><input id="leadKeyword" placeholder="price"></div>
+    </div>
+    <label>Notes</label><input id="leadNotes" placeholder="Asked for restaurant website pricing">
+    <button class="btn primary" id="leadAdd" style="margin-top:12px">→ Create Lead in Pipeline</button>
+    <div style="margin-top:12px">
+      ${D.leads.length === 0 ? `<div class="empty">No leads logged yet — this is how the loop feeds the money pipeline.</div>` :
+        [...D.leads].reverse().slice(0, 10).map(l => `<div class="list-item"><div class="grow"><div class="t">${esc(l.name)} <span class="pill c">${esc(l.channel)}</span></div>
+          <div class="s">${l.date} · matched “${esc(l.keyword)}”${l.notes ? " · " + esc(l.notes) : ""}</div></div></div>`).join("")}
+    </div>
+  </div>
+  <div class="card">
+    <div class="flex-between"><b>Loop config</b><button class="btn sm" id="dmExport">⬇ Export loop config (JSON)</button></div>
+    <div class="note">Loop config also lives inside state.dmloop, so it is included automatically in the full backup export.</div>
+  </div>`;
+}
+
 function viewTasks() {
   return `
   <h2 class="sec">Tasks</h2>
@@ -677,16 +918,160 @@ create policy "open" on kv for all using (true) with check (true);</pre>
     </div>
   </div>
   <div class="card">
+    <b>AI Lady Voice — ElevenLabs (optional, premium)</b>
+    <div class="note">Without a key, replies use your device's best female voice (free). With a key, replies are spoken by a premium ElevenLabs voice. Only the reply text is ever sent.</div>
+    <label>ElevenLabs API key</label><input id="elevenKey" type="password" placeholder="sk_…" value="${esc(s.elevenKey)}">
+    <label>Voice ID (default: Rachel — female)</label><input id="elevenVoice" placeholder="21m00Tcm4TlvDq8ikWAM" value="${esc(s.elevenVoice)}">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="saveEleven">Save voice settings</button>
+      <button class="btn ghost" id="testEleven">Test voice</button>
+    </div>
+  </div>
+  <div class="card">
+    <b>DM Loop — Booking Link</b>
+    <div class="note">Used by the "book/meeting" auto-reply rule (the {service} variable).</div>
+    <label>Zoom / Calendly booking link</label><input id="bookingLink" placeholder="https://calendly.com/sultan-qimmah/15min" value="${esc(s.bookingLink)}">
+    <div style="margin-top:12px"><button class="btn" id="saveBooking">Save booking link</button></div>
+  </div>
+  <div class="card">
+    <div class="flex-between"><b>24/7 Laptop Daemon (optional)</b>
+      ${s.lastDaemon ? `<span class="pill g">Daemon last ran: ${esc(new Date(s.lastDaemon).toLocaleString())}</span>` : `<span class="pill a">daemon not detected yet</span>`}
+    </div>
+    <div class="note">While this tab is open, agents already train automatically every day. With your laptop always on and this daemon running, agents train at midnight <b>even if the browser is closed</b> — it writes results to your Supabase, and your phone picks them up via cloud sync.</div>
+    <div class="note"><b>3 steps:</b> 1) Download the script below. 2) Run <span class="mono">python3 agent_daemon.py</span> (asks for your Supabase URL + key once, saves them to daemon_config.json). 3) Leave the terminal open — or add it to your laptop's startup apps. Uses only Python's standard library — nothing to install.</div>
+    <div style="margin-top:12px"><button class="btn primary" id="daemonBtn">⬇ Download agent_daemon.py</button></div>
+    <div class="note">Requires Cloud Sync (Supabase) set up above — the daemon reads/writes the same <span class="mono">kv</span> table row <span class="mono">qimmah_state</span>.</div>
+  </div>
+  <div class="card">
     <div class="flex-between"><b>Owner</b><span class="owner-badge" style="margin:0">Sultan — OWNER</span></div>
     <div style="margin-top:14px"><button class="btn danger" id="resetAll">Sign out & reset ALL data</button></div>
   </div>`;
+}
+
+/* ============ 24/7 DAEMON SCRIPT ============ */
+function daemonScript() {
+  // Self-contained Python daemon (stdlib only) that applies the same daily XP
+  // cycle to all 60 agents and syncs state to the user's Supabase kv table.
+  return '#!/usr/bin/env python3\n' + `"""Qimmah Digital - 24/7 Agent Daemon
+Runs one daily XP training cycle for all 60 agents and syncs state to Supabase,
+so agents train at midnight even when the browser is closed. Your phone picks
+the results up via the app's normal cloud sync.
+
+Setup: run 'python3 agent_daemon.py' once - it asks for your Supabase URL and
+anon key and saves them to daemon_config.json next to this script.
+Requires: Python 3.6+ standard library ONLY. No pip installs.
+"""
+import json, os, random, sys, time, urllib.request, urllib.error
+from datetime import date, datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CONFIG = os.path.join(HERE, "daemon_config.json")
+INTERVAL = 24 * 3600  # run every 24h (and once on start)
+
+INSIGHTS = [
+    "{name} refined their {skill} playbook - response quality up after studying yesterday's wins.",
+    "{name} found a faster {skill} workflow and shared it with the whole squad.",
+    "{name} leveled up their {skill}: cut task time by batching similar requests.",
+    "{name} cross-trained with a squadmate and added a new {skill} variation.",
+    "{name} reviewed failed attempts and patched 2 weak spots in their {skill} routine.",
+    "{name} hit a personal best - {skill} output quality trending upward all week.",
+]
+
+def log(msg):
+    print("[" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "] " + msg, flush=True)
+
+def load_config():
+    cfg = {}
+    if os.path.exists(CONFIG):
+        try:
+            cfg = json.load(open(CONFIG))
+        except Exception:
+            cfg = {}
+    if not cfg.get("supaUrl") or not cfg.get("supaKey"):
+        print("First run - enter your Supabase credentials (same as app Settings > Cloud Sync).")
+        cfg["supaUrl"] = input("Supabase URL (https://xyz.supabase.co): ").strip()
+        cfg["supaKey"] = input("Anon key: ").strip()
+        json.dump(cfg, open(CONFIG, "w"), indent=2)
+        log("Saved " + CONFIG)
+    return cfg
+
+def api(cfg, method, path, body=None):
+    req = urllib.request.Request(
+        cfg["supaUrl"].rstrip("/") + "/rest/v1/kv" + path,
+        method=method,
+        headers={"apikey": cfg["supaKey"], "Authorization": "Bearer " + cfg["supaKey"],
+                 "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"},
+        data=json.dumps(body).encode() if body is not None else None)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        raw = r.read().decode()
+        return json.loads(raw) if raw else None
+
+def run_cycle():
+    cfg = load_config()
+    rows = api(cfg, "GET", "?id=eq.qimmah_state&select=data")
+    if not rows:
+        log("No state row found in Supabase yet - open the app and enable sync first.")
+        return
+    state = rows[0]["data"]
+    agents = (state.get("agents") or {})
+    alist = agents.get("list") or []
+    if not alist:
+        log("No agents found in state - open the app once so it seeds the 60 agents.")
+        return
+    today = date.today().isoformat()
+    if agents.get("lastDaemonDate") == today:
+        log("Already trained today (" + today + ") - nothing to do.")
+        return
+    top, top_gain = None, -1
+    for a in alist:
+        gain = 15 + random.randint(0, 24)  # 15-39 XP/day (same as app)
+        a["xp"] = int(a.get("xp", 0)) + gain
+        a["level"] = a["xp"] // 100 + 1
+        a["daysTrained"] = int(a.get("daysTrained", 0)) + 1
+        if gain > top_gain:
+            top, top_gain = a, gain
+    insight = random.choice(INSIGHTS).replace("{name}", top["name"]).replace("{skill}", top.get("skill", ""))
+    alog = agents.setdefault("log", [])
+    alog.append({"date": today, "agentId": top["id"], "name": top["name"], "squad": top.get("squad", ""),
+                 "gain": top_gain, "level": top["level"], "insight": insight})
+    del alog[:-90]  # cap log at 90
+    agents["lastDaemonDate"] = today
+    agents["lastImprovementDate"] = today
+    agents["lastTrainingAt"] = datetime.now(timezone.utc).isoformat()
+    state.setdefault("settings", {})["lastDaemon"] = datetime.now(timezone.utc).isoformat()
+    api(cfg, "POST", "", {"id": "qimmah_state", "data": state})
+    log("Training done: %d agents, top = %s +%d XP (Lv %d). Synced to Supabase." %
+        (len(alist), top["name"], top_gain, top["level"]))
+
+def main():
+    log("Qimmah 24/7 daemon started. Ctrl+C to stop.")
+    while True:
+        try:
+            run_cycle()
+        except urllib.error.URLError as e:
+            log("Network error (will retry tomorrow): " + str(e))
+        except Exception as e:
+            log("Error (will retry tomorrow): " + repr(e))
+        time.sleep(INTERVAL)
+
+if __name__ == "__main__":
+    main()
+`;
+}
+function downloadDaemon() {
+  const blob = new Blob([daemonScript()], { type: "text/x-python" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "agent_daemon.py";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast("agent_daemon.py downloaded ✓");
 }
 
 /* ============ RENDER ============ */
 function render() {
   renderTabs();
   const v = document.getElementById("view");
-  v.innerHTML = { overview: viewOverview, agents: viewAgents, brain: viewBrain, ceo: viewCEO, finance: viewFinance, pipeline: viewPipeline, tasks: viewTasks, settings: viewSettings }[activeTab]();
+  v.innerHTML = { overview: viewOverview, agents: viewAgents, brain: viewBrain, ceo: viewCEO, finance: viewFinance, pipeline: viewPipeline, dmloop: viewDmloop, tasks: viewTasks, settings: viewSettings }[activeTab]();
   bind();
   const box = document.getElementById("chatBox");
   if (box) box.scrollTop = box.scrollHeight;
@@ -736,6 +1121,33 @@ function bind() {
   const ci = document.getElementById("chatInput"); if (ci) ci.onkeydown = e => { if (e.key === "Enter") send(); };
   const br = document.getElementById("briefing");
   if (br) br.onclick = () => { state.chat.push({ role: "ai", content: buildBriefing() }); save(); render(); };
+  const sb = document.getElementById("shareBriefing");
+  if (sb) sb.onclick = async () => {
+    const text = buildBriefing();
+    try {
+      if (navigator.share) { await navigator.share({ title: "Qimmah Daily Briefing", text }); toast("Briefing shared ✓"); }
+      else throw new Error("no share");
+    } catch (e) {
+      try { await navigator.clipboard.writeText(text); toast("Briefing copied — paste into WhatsApp"); }
+      catch (e2) { toast("Could not share — copy it manually"); }
+    }
+  };
+  const mb = document.getElementById("micBtn");
+  if (mb) mb.onclick = startListening;
+  const vt = document.getElementById("voiceToggle");
+  if (vt) vt.onclick = () => {
+    state.settings.voiceOn = !state.settings.voiceOn;
+    if (!state.settings.voiceOn && "speechSynthesis" in window) speechSynthesis.cancel();
+    save(); render();
+  };
+  const vp = document.getElementById("voicePick");
+  if (vp) vp.onchange = () => { state.settings.voiceName = vp.value; save(); toast("Voice selected ✓"); };
+  const tv = document.getElementById("testVoice");
+  if (tv) tv.onclick = testVoice;
+  document.querySelectorAll("[data-speak]").forEach(b => b.onclick = () => {
+    const m = state.chat[+b.dataset.speak];
+    if (m) { const wasOff = !state.settings.voiceOn; state.settings.voiceOn = true; speakReply(m.content); state.settings.voiceOn = wasOff ? false : true; }
+  });
 
   // Finance
   const ax = document.getElementById("addTx");
@@ -768,6 +1180,99 @@ function bind() {
   document.querySelectorAll("[data-delclient]").forEach(b => b.onclick = () => {
     if (confirm("Remove this client?")) { state.pipeline = state.pipeline.filter(p => p.id !== b.dataset.delclient); save(); render(); }
   });
+
+  // DM Loop
+  const dp = document.getElementById("dmPause");
+  if (dp) dp.onclick = () => { state.dmloop.pauseAll = !state.dmloop.pauseAll; save(); render(); toast(state.dmloop.pauseAll ? "DM loop paused" : "DM loop live"); };
+  const dmSaveSafety = () => {
+    const c = document.getElementById("dmCooldown"); if (c) state.dmloop.cooldownMin = Math.max(0, parseInt(c.value, 10) || 0);
+    const bh = document.getElementById("dmBH"); if (bh) state.dmloop.businessHoursOnly = bh.value === "on";
+    const s1 = document.getElementById("dmBHStart"); if (s1) state.dmloop.bhStart = s1.value || "09:00";
+    const s2 = document.getElementById("dmBHEnd"); if (s2) state.dmloop.bhEnd = s2.value || "21:00";
+    save();
+  };
+  ["dmCooldown", "dmBH", "dmBHStart", "dmBHEnd"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.onchange = () => { dmSaveSafety(); toast("Safety settings saved ✓"); };
+  });
+  const da = document.getElementById("dmAdd");
+  if (da) da.onclick = () => {
+    const keyword = document.getElementById("dmKeyword").value.trim().toLowerCase();
+    const reply = document.getElementById("dmReply").value.trim();
+    if (!keyword || !reply) { toast("Enter keyword and reply template"); return; }
+    state.dmloop.rules.push({
+      id: uid(), keyword,
+      channel: document.getElementById("dmChannel").value,
+      dailyCap: parseInt(document.getElementById("dmCap").value, 10) || 30,
+      enabled: true, reply
+    });
+    save(); render(); toast("Rule added ✓");
+  };
+  document.querySelectorAll("[data-dmtoggle]").forEach(b => b.onchange = () => {
+    const r = state.dmloop.rules.find(x => x.id === b.dataset.dmtoggle);
+    if (r) { r.enabled = b.checked; save(); render(); }
+  });
+  const dmMove = (i, dir) => {
+    const j = i + dir;
+    if (j < 0 || j >= state.dmloop.rules.length) return;
+    const [r] = state.dmloop.rules.splice(i, 1);
+    state.dmloop.rules.splice(j, 0, r);
+    save(); render();
+  };
+  document.querySelectorAll("[data-dmup]").forEach(b => b.onclick = () => dmMove(+b.dataset.dmup, -1));
+  document.querySelectorAll("[data-dmdown]").forEach(b => b.onclick = () => dmMove(+b.dataset.dmdown, 1));
+  document.querySelectorAll("[data-dmdel]").forEach(b => b.onclick = () => {
+    if (confirm("Delete this rule?")) { state.dmloop.rules = state.dmloop.rules.filter(x => x.id !== b.dataset.dmdel); save(); render(); }
+  });
+  document.querySelectorAll("[data-dmedit]").forEach(b => b.onclick = () => {
+    const r = state.dmloop.rules.find(x => x.id === b.dataset.dmedit);
+    if (!r) return;
+    const kw = prompt("Keyword / phrase:", r.keyword); if (kw == null) return;
+    const rp = prompt("Reply template ({name} {service} {price}):", r.reply); if (rp == null) return;
+    const cap = prompt("Daily send cap (number):", String(r.dailyCap || 30)); if (cap == null) return;
+    if (kw.trim()) r.keyword = kw.trim().toLowerCase();
+    if (rp.trim()) r.reply = rp.trim();
+    r.dailyCap = parseInt(cap, 10) || r.dailyCap || 30;
+    save(); render(); toast("Rule updated ✓");
+  });
+  document.querySelectorAll("[data-dmai]").forEach(b => b.onclick = async () => {
+    const r = state.dmloop.rules.find(x => x.id === b.dataset.dmai);
+    if (!r) return;
+    if (!state.settings.groqKey) { toast("Add a Groq key in AI CEO tab first"); return; }
+    b.disabled = true; b.textContent = "Drafting…"; b.classList.add("spin");
+    try {
+      const txt = await groq([
+        { role: "system", content: CEO_SYSTEM + " Write ONE short WhatsApp/Instagram DM auto-reply (max 45 words) for the trigger keyword given. Friendly Omani-business tone, may use variables {name}, {service}, {price}. Reply with ONLY the message text." },
+        { role: "user", content: "Trigger keyword: \"" + r.keyword + "\". Channel: " + r.channel + ". Current draft: " + r.reply }
+      ], 160);
+      const clean = String(txt).trim().replace(/^["']|["']$/g, "");
+      if (clean) { r.reply = clean; save(); render(); toast("AI reply drafted ✓"); }
+    } catch (e) {
+      console.warn("AI draft failed, kept template:", e);
+      toast("AI failed — kept existing template");
+      render();
+    }
+  });
+  const la = document.getElementById("leadAdd");
+  if (la) la.onclick = () => {
+    const name = document.getElementById("leadName").value.trim();
+    if (!name) { toast("Enter a name or handle"); return; }
+    const channel = document.getElementById("leadChannel").value;
+    const keyword = document.getElementById("leadKeyword").value.trim();
+    const notes = document.getElementById("leadNotes").value.trim();
+    state.dmloop.leads.push({ id: uid(), name, channel, keyword, notes, date: today() });
+    state.pipeline.push({ id: uid(), name: name + " (" + channel + " DM)", value: 0, stage: "Lead",
+      notes: "DM loop lead · matched “" + (keyword || "manual") + "”" + (notes ? " · " + notes : "") });
+    save(); render(); toast("Lead added to Pipeline ✓");
+  };
+  const de = document.getElementById("dmExport");
+  if (de) de.onclick = () => {
+    const blob = new Blob([JSON.stringify(state.dmloop, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "qimmah-dmloop-" + today() + ".json";
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("Loop config downloaded ✓");
+  };
 
   // Tasks
   const adk = document.getElementById("addTask");
@@ -806,7 +1311,7 @@ function bind() {
         if (!j || typeof j !== "object" || !("finance" in j || "tasks" in j || "studies" in j)) throw new Error("not a Qimmah backup");
         state = Object.assign(defaultState(), j);
         state.settings = Object.assign(defaultState().settings, j.settings || {});
-        ensureAgents(); runDailyImprovement();
+        ensureDmloop(); ensureAgents(); runDailyImprovement();
         save(); render(); toast("Backup restored ✓");
       } catch (e) { toast("Import failed: " + e.message); }
     };
@@ -825,6 +1330,19 @@ function bind() {
     if (state.settings.syncOn) syncPush();
   };
   const ps = document.getElementById("pullSync"); if (ps) ps.onclick = syncPull;
+  const se = document.getElementById("saveEleven");
+  if (se) se.onclick = () => {
+    state.settings.elevenKey = document.getElementById("elevenKey").value.trim();
+    state.settings.elevenVoice = document.getElementById("elevenVoice").value.trim() || "21m00Tcm4TlvDq8ikWAM";
+    save(); toast("Voice settings saved ✓");
+  };
+  const te = document.getElementById("testEleven"); if (te) te.onclick = testVoice;
+  const sbl = document.getElementById("saveBooking");
+  if (sbl) sbl.onclick = () => {
+    state.settings.bookingLink = document.getElementById("bookingLink").value.trim();
+    save(); toast("Booking link saved ✓");
+  };
+  const db = document.getElementById("daemonBtn"); if (db) db.onclick = downloadDaemon;
   const ra = document.getElementById("resetAll");
   if (ra) ra.onclick = () => {
     if (confirm("This permanently deletes ALL data on this device. Export a backup first. Continue?") &&
@@ -838,6 +1356,19 @@ function bind() {
 
 /* ============ INIT ============ */
 load();
+ensureDmloop();
 ensureAgents();
 runDailyImprovement(); // daily self-improvement cycle + catch-up for missed days
 render();
+
+// 24/7 always-on: while the app is open, check every 60s whether a new
+// calendar day started and run the training cycle automatically.
+let lastCycleDay = today();
+setInterval(() => {
+  if (today() !== lastCycleDay) {
+    lastCycleDay = today();
+    runDailyImprovement();
+    if (activeTab === "agents" || activeTab === "overview") render();
+    toast("New day — agents trained ✓");
+  }
+}, 60 * 1000);
