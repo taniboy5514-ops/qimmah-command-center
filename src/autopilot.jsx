@@ -6,7 +6,7 @@
    ============================================================ */
 import { useState, useEffect } from "react";
 import { Award, Download, Play, Power, Zap, FileText, Users, Brain, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, omr, timeAgo, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty } from "./shared.jsx";
+import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, omr, timeAgo, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
 import { downloadFile } from "./views3.jsx";
 
 export const SQUADS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
@@ -145,7 +145,7 @@ export async function runCycle(S, up, log, opts) {
       cycleCount: cycleNo,
       nextTopicIdx: queued && !isMeta ? (s.autopilot && s.autopilot.nextTopicIdx || 0) : ((s.autopilot && s.autopilot.nextTopicIdx || 0) + (isMeta ? 0 : 1)),
     },
-    chat: [...s.chat, { id: uid(), role: "assistant", content: "⚙️ Cycle #" + cycleNo + " — Squad " + squad + " (" + agent + ") " + (isMeta ? "reviewed its own methods" : "worked: " + entry.topic) + (entry.offline ? " [offline]" : "") + ". Result saved in the Results tab.", actions: null, applied: true, ts: Date.now() }],
+    chat: [...s.chat, fleetChatMsg("Squad " + squad, "⚙️ Cycle #" + cycleNo + " — Squad " + squad + " (" + agent + ") " + (isMeta ? "reviewed its own methods" : "worked: " + entry.topic) + (entry.offline ? " [offline]" : "") + ". Result saved in the Results tab.")].slice(-CHAT_CAP),
   }));
   log("autopilot", "Cycle #" + cycleNo + " — Squad " + squad + ": " + (isMeta ? "method self-review saved" : entry.topic.slice(0, 60)));
   return entry;
@@ -290,8 +290,11 @@ export async function quickDeploy(S, up, log, kind) {
 /* ---------- Markdown export for one result ---------- */
 export function resultMarkdown(r) {
   let md = "# Qimmah Digital — Work Result\n\n";
-  md += "_" + r.hour + " · Squad " + r.squad + " · " + r.agent + (r.type ? " · " + r.type : "") + (r.offline ? " · offline mode" : "") + "_\n\n";
-  md += "## " + r.topic + "\n\n" + (r.summary || "") + "\n\n";
+  md += "_" + (r.hour || new Date(r.ts).toLocaleString()) + " · Squad " + (r.squad || "—") + " · " + (r.agent || "AI CEO") + (r.type ? " · " + r.type : "") + (r.offline ? " · offline mode" : "") + "_\n\n";
+  md += "## " + (r.topic || r.title || "Deliverable") + "\n\n" + (r.summary || "") + "\n\n";
+  if (r.content) {
+    md += "## Delivered file: " + (r.filename || "deliverable.md") + "\n\n" + r.content + "\n\n";
+  }
   if (r.insights && r.insights.length) {
     md += "## Insights\n";
     r.insights.forEach((i) => { md += "- " + i + "\n"; });
@@ -331,7 +334,16 @@ export function resultMarkdown(r) {
 /* ============================================================
    RESULTS VIEW — feed of every cycle's saved result
    ============================================================ */
-const TYPE_STYLE = { study: { c: "#A78BFA", label: "study" }, work: { c: CYAN, label: "work" }, meta: { c: "#FBBF24", label: "method" }, "squad-study": { c: "#34D399", label: "squad study" } };
+const TYPE_STYLE = { study: { c: "#A78BFA", label: "study" }, work: { c: CYAN, label: "work" }, meta: { c: "#FBBF24", label: "method" }, "squad-study": { c: "#34D399", label: "squad study" }, deliverable: { c: "#22D3EE", label: "deliverable" } };
+
+/* MIME for a delivered file — .html and .svg download as real files. */
+export function deliverableMime(fname) {
+  const f = String(fname || "");
+  if (f.endsWith(".html")) return "text/html";
+  if (f.endsWith(".svg")) return "image/svg+xml";
+  if (f.endsWith(".md")) return "text/markdown";
+  return "text/plain";
+}
 
 function ResultCard({ r, up, log }) {
   const [open, setOpen] = useState(false);
@@ -411,8 +423,19 @@ function ResultCard({ r, up, log }) {
               <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>{r.meta.checklist.map((c, i) => <div key={i}>{i + 1}. {c}</div>)}</div>
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <button style={btnGhost} onClick={(e) => { e.stopPropagation(); try { downloadFile("qimmah-result-" + (r.type || "work") + "-" + new Date(r.ts).toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".md", resultMarkdown(r), "text/markdown"); log("system", "Result downloaded: " + r.topic.slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
+          {r.content && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#22D3EE", marginBottom: 5 }}>Delivered file · {r.filename}</div>
+              <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7, maxHeight: 240, overflowY: "auto", whiteSpace: "pre-wrap", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: 10 }}>{r.content}</div>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+            {r.content && (
+              <button style={btnPrimary} onClick={(e) => { e.stopPropagation(); try { downloadFile(r.filename || "deliverable.md", r.content, deliverableMime(r.filename)); log("system", "Deliverable downloaded: " + String(r.filename || "").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
+                <Download size={13} /> Download {r.filename}
+              </button>
+            )}
+            <button style={btnGhost} onClick={(e) => { e.stopPropagation(); try { downloadFile("qimmah-result-" + (r.type || "work") + "-" + new Date(r.ts).toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".md", resultMarkdown(r), "text/markdown"); log("system", "Result downloaded: " + String(r.topic || r.title || "result").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
               <Download size={13} /> Download .md
             </button>
           </div>
