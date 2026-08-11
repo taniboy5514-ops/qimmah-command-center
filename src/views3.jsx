@@ -106,8 +106,32 @@ function forecastSeries(points) {
   return Array.from({ length: 6 }, (_, i) => Math.max(0, Math.round(slope * (n + i) + b)));
 }
 
+/* Scenario Mode — three paths to the OMR 19,800/mo target, computed from
+   editable deal economics. Works from day one, before any income history. */
+function scenarioPaths(web, ret, closeRate) {
+  const w = Math.max(0, Number(web) || 0), r = Math.max(0, Number(ret) || 0);
+  const cr = Math.min(100, Math.max(1, Number(closeRate) || 1)) / 100;
+  const mk = (name, color, webDeals, retClients, months) => {
+    const steady = retClients * r + w * (webDeals / Math.max(1, months)); // recurring retainers + websites amortized over the path
+    const pitchesPerWeek = Math.ceil(((webDeals + retClients) / Math.max(1, months * 4.33)) / cr);
+    return {
+      name, color, months,
+      webDeals, retClients,
+      dealsPerWeek: Math.max(1, Math.round((webDeals + retClients) / Math.max(1, months * 4.33) * 10) / 10),
+      pitchesPerWeek,
+      projection: Math.round(steady),
+    };
+  };
+  return [
+    mk("Conservative", "#34D399", 8, 40, 12),
+    mk("Base", CYAN, 12, 56, 8),
+    mk("Aggressive", "#F472B6", 16, 72, 5),
+  ].map((p) => ({ ...p, hitsTarget: p.projection >= REVENUE_TARGET }));
+}
+
 export function MiroFish({ S, up, log }) {
   const [opp, setOpp] = useState({ segment: "", note: "" });
+  const [econ, setEcon] = useState({ web: 400, ret: 250, close: 20 });
   const monthsWithData = useMemo(() => {
     const by = {};
     S.transactions.filter((t) => t.type === "income").forEach((t) => {
@@ -167,6 +191,11 @@ export function MiroFish({ S, up, log }) {
                 ))}
               </div>}
           {fc && <div style={{ marginTop: 12, fontSize: 12, color: "#8B86A3" }}>Linear trend projection from {monthsWithData.length} months of recorded income. Confidence grows +10% per month of history, capped at 90%.</div>}
+          {!fc && (
+            <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 10, background: "rgba(6,182,212,0.08)", border: "1px solid rgba(6,182,212,0.25)", fontSize: 12, color: "#A5F3FC", lineHeight: 1.6 }}>
+              No trend data yet — so MiroFish is running in <b>Scenario Mode</b> below: three real paths to {omr(REVENUE_TARGET)}/mo computed from your deal economics. Record income and the live forecast takes over automatically.
+            </div>
+          )}
         </Card>
         <Card style={{ flex: "1 1 280px", minWidth: 260 }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 12 }}>Market opportunities</div>
@@ -190,6 +219,43 @@ export function MiroFish({ S, up, log }) {
               </div>}
         </Card>
       </div>
+
+      {/* SCENARIO MODE — three paths to the target, plus a live what-if calculator */}
+      <Card glow style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>Scenario Mode · paths to {omr(REVENUE_TARGET)}/mo</div>
+          {!fc && <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "rgba(167,139,250,0.15)", color: "#A78BFA", border: "1px solid rgba(167,139,250,0.35)" }}>works from day one</span>}
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+          <Field label="Avg website deal · OMR"><input style={{ ...inputStyle, width: 110 }} inputMode="numeric" value={econ.web} onChange={(e) => setEcon({ ...econ, web: e.target.value.replace(/[^0-9]/g, "") })} /></Field>
+          <Field label="Avg retainer · OMR/mo"><input style={{ ...inputStyle, width: 110 }} inputMode="numeric" value={econ.ret} onChange={(e) => setEcon({ ...econ, ret: e.target.value.replace(/[^0-9]/g, "") })} /></Field>
+          <Field label={"Close rate · " + econ.close + "%"}>
+            <input type="range" min="5" max="60" value={econ.close} onChange={(e) => setEcon({ ...econ, close: Number(e.target.value) })} style={{ width: 140, accentColor: PURPLE }} />
+          </Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+          {scenarioPaths(econ.web, econ.ret, econ.close).map((p) => (
+            <div key={p.name} style={{ ...glass, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: p.color }}>{p.name}</span>
+                <span style={{ fontSize: 10.5, color: "#8B86A3" }}>{p.months} months</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.8 }}>
+                <div>Websites to sell: <b style={{ color: "#F5F3FF" }}>{p.webDeals}</b> × {omr(econ.web)}</div>
+                <div>Retainer clients: <b style={{ color: "#F5F3FF" }}>{p.retClients}</b> × {omr(econ.ret)}/mo</div>
+                <div>Pace: <b style={{ color: "#F5F3FF" }}>{p.dealsPerWeek} deals/wk</b> · ~{p.pitchesPerWeek} pitches/wk at {econ.close}% close</div>
+                <div>Projection: <b style={{ color: p.hitsTarget ? "#34D399" : "#FBBF24" }}>{omr(p.projection)}/mo</b>{p.hitsTarget ? " ▲ target hit" : " (raise deal size or close rate)"}</div>
+              </div>
+              <div style={{ fontSize: 11, color: "#8B86A3", marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.07)", lineHeight: 1.6 }}>
+                Squad Alpha hunts the {p.dealsPerWeek} weekly deals · Beta delivers websites in days · Gamma tracks close rates · Delta automates onboarding · Epsilon upgrades the offer.
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: "#8B86A3", lineHeight: 1.6 }}>
+          What-if is live: move the close-rate slider or edit the OMR deal sizes and every path recomputes instantly. When real income history exists, this sits under the live forecast.
+        </div>
+      </Card>
     </div>
   );
 }
