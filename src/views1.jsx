@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field } from "./shared.jsx";
+import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio } from "lucide-react";
+import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
+import { deliverableMime } from "./autopilot.jsx";
+import { downloadFile } from "./views3.jsx";
 /* ============================================================
    OPERATIONS RADAR — live view of what every agent is doing.
    Lit entirely by real data: tasks In Progress burn bright,
@@ -257,7 +259,7 @@ export function AutopilotPanel({ S, up, log, user }) {
 /* ============================================================
    AI CEO CHAT — direct Groq API, voice in/out, insights
    ============================================================ */
-export function CEOChat({ S, up, log, user }) {
+export function CEOChat({ S, up, log, user, go }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -276,7 +278,6 @@ export function CEOChat({ S, up, log, user }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [S.chat.length, busy]);
 
-  // Browser voices load asynchronously — warm the list so the female voice is ready on first speak.
   useEffect(() => {
     try {
       if (!window.speechSynthesis) return;
@@ -333,7 +334,7 @@ export function CEOChat({ S, up, log, user }) {
     if (!text || busy) return;
     setDraft(""); setError("");
     const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "" };
-    up((s) => ({ ...s, chat: [...s.chat, userMsg] }));
+    up((s) => ({ ...s, chat: [...s.chat, userMsg].slice(-CHAT_CAP) }));
     setBusy(true);
     try {
       const history = sanitizeHistory([...S.chat, userMsg].slice(-40));
@@ -344,17 +345,60 @@ export function CEOChat({ S, up, log, user }) {
         + "\n\n" + TOOL_INSTRUCTIONS;
       const raw = await aiCall(S, sys, history);
       const parsed = parseActions(raw);
-      const reply = parsed.clean || raw;
+      let reply = parsed.clean || raw;
       const aiMsg = { id: uid(), role: "assistant", content: reply, actions: parsed.actions || null, applied: false, links: [], ts: Date.now() };
       const cat = classifyInsight(reply);
       const insight = { id: uid(), cat, text: reply.replace(/[*#_`]/g, "").slice(0, 200), ts: Date.now() };
       up((s) => ({
         ...s,
-        chat: [...s.chat, aiMsg],
+        chat: [...s.chat, aiMsg].slice(-CHAT_CAP),
         insights: [insight, ...s.insights].slice(0, 40),
       }));
       log("chat", "AI CEO answered " + (user ? user.name : "") + ": " + text.slice(0, 60));
       if (S.autoSpeak) speak(reply);
+
+      /* WORK GETS DONE — if the user asked for a deliverable and the reply
+         only talked about it (no deliver_work action), make a second call
+         that produces the actual artifact and save it to Results. */
+      const alreadyDelivered = (parsed.actions || []).some((a) => a && a.type === "deliver_work");
+      if (wantsWork(text) && !alreadyDelivered) {
+        try {
+          const dsys = SYSTEM_PROMPT
+            + "\n\nLIVE BUSINESS STATE (real, current):\n" + JSON.stringify(buildSnapshot(S))
+            + "\n\nDELIVERABLE MODE: The delivery fleet (Squad Beta) now produces the COMPLETE finished artifact the user asked for — the full website copy section by section, the full HTML page, the full outreach script, the full proposal, the full plan or the full code. No placeholders, no 'TODO', no talking about the work — the finished work itself, ready to use as-is. "
+            + "End your reply with a fenced json block exactly like:\n"
+            + "```json\n{\"title\":\"short deliverable title\",\"filename\":\"kebab-case-name.md or .html\",\"content\":\"the COMPLETE file content\"}\n```\n"
+            + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON.";
+          const dmsgs = [{ role: "user", content: "User request: " + text + "\n\nThe CEO's reply for context: " + reply.slice(0, 900) + "\n\nNow produce the complete deliverable file." }];
+          let draw;
+          try {
+            draw = await aiCall(S, dsys, dmsgs, { model: "groq/compound" });
+          } catch (e) {
+            const modelErr = e && (e.status === 400 || e.status === 404 || /model|compound|decommissioned|not found/i.test(String(e.detail || "")));
+            if (!modelErr || IN_PREVIEW) throw e;
+            draw = await aiCall(S, dsys, dmsgs);
+          }
+          const fence = draw.match(/```json\s*([\s\S]*?)```/) || draw.match(/```\s*(\{[\s\S]*?"content"[\s\S]*?\})\s*```/);
+          let d = null;
+          if (fence) { try { d = JSON.parse(fence[1]); } catch (e) { /* malformed */ } }
+          const content = d && d.content ? String(d.content).slice(0, 60000) : String(draw).slice(0, 60000);
+          const title = String((d && d.title) || ("Deliverable: " + text.slice(0, 60))).slice(0, 100);
+          const filename = String((d && d.filename) || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60) || "deliverable.md";
+          const hour = new Date().toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+          const entry = {
+            id: uid(), type: "deliverable", topic: title, title, filename, content,
+            summary: "Delivered for: \"" + text.slice(0, 120) + "\"",
+            hour, squad: "Beta", agent: "Delivery Fleet", cycle: null, ts: Date.now(),
+          };
+          up((s) => ({
+            ...s,
+            results: [entry, ...(s.results || [])].slice(0, 200),
+            chat: [...s.chat.map((x) => (x.id === aiMsg.id ? { ...x, deliverable: { id: entry.id, title, filename, content } } : x)),
+              fleetChatMsg("Squad Beta · Delivery Fleet", "📦 Handed in: " + title + " (" + filename + ") — download it from the card above or the Results tab.")].slice(-CHAT_CAP),
+          }));
+          log("autopilot", "Work delivered: " + title + " (" + filename + ")");
+        } catch (e) { /* deliverable pass failed — the chat reply still stands */ }
+      }
     } catch (e) {
       const msg = e && e.message ? e.message : "";
       setError(msg === "Failed to fetch" || !msg
@@ -509,14 +553,41 @@ export function CEOChat({ S, up, log, user }) {
           )}
           {S.chat.map((m) => (
             <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
+              {m.fleet && (
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", color: CYAN, padding: "2px 8px", borderRadius: 20, background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.35)", marginBottom: 4 }}>
+                  <Radio size={10} /> Fleet · {m.by || "agent"}
+                </div>
+              )}
               <div style={{
                 padding: "10px 14px", borderRadius: 14, fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap",
                 ...(m.role === "user"
                   ? { background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", borderBottomRightRadius: 4 }
-                  : { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#E9E4FB", borderBottomLeftRadius: 4 }),
+                  : m.fleet
+                    ? { background: "rgba(6,182,212,0.06)", border: "1px solid rgba(6,182,212,0.25)", color: "#D6F3FB", borderBottomLeftRadius: 4 }
+                    : { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "#E9E4FB", borderBottomLeftRadius: 4 }),
               }}>
                 {m.content}
               </div>
+              {m.role === "assistant" && m.deliverable && (
+                <div style={{ marginTop: 6, padding: 12, borderRadius: 10, background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.35)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#22D3EE", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                    <FileCheck2 size={13} /> Work delivered
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#F5F3FF", marginBottom: 2 }}>{m.deliverable.title}</div>
+                  <div style={{ fontSize: 11, color: "#8B86A3", marginBottom: 8 }}>{m.deliverable.filename} · saved in the Results tab</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12.5 }}
+                      onClick={() => { try { downloadFile(m.deliverable.filename, m.deliverable.content, deliverableMime(m.deliverable.filename)); log("system", "Deliverable downloaded: " + m.deliverable.filename); } catch (err) { /* download unavailable */ } }}>
+                      <Download size={13} /> Download {m.deliverable.filename}
+                    </button>
+                    {go && (
+                      <button style={{ ...btnGhost, padding: "7px 14px", fontSize: 12.5 }} onClick={() => go("results")}>
+                        Open in Results
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               {m.role === "assistant" && m.actions && m.actions.length > 0 && (
                 <div style={{ marginTop: 6, padding: 10, borderRadius: 10, background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>
