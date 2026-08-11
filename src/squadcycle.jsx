@@ -9,7 +9,7 @@
    ============================================================ */
 import { useState, useEffect } from "react";
 import { Power, Play, Brain, Radio, Users, FileText, CheckCircle2 } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, AGENTS, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, timeAgo, btnPrimary, btnGhost, Card } from "./shared.jsx";
+import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, AGENTS, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, timeAgo, btnPrimary, btnGhost, Card, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
 
 export const SQUADS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
 export const MIN_INTERVAL = 10, MAX_INTERVAL = 15, DEFAULT_INTERVAL = 12;
@@ -226,6 +226,12 @@ export async function runSquadCycle(S, up, log, onPhase) {
       ...SQUADS.map((sq) => ({ id: uid(), type: "agent", text: "CEO Brain issued directive to Squad " + sq + ": " + String(study.directives[sq]).slice(0, 90), ts, by: "CEO Brain" })),
       ...(s.feed || []),
     ].slice(0, 100),
+    /* Fleet talks to the CEO directly in the AI CEO chat — digest-ready and
+       directive-issued messages appear there with a FLEET badge. */
+    chat: [...(s.chat || []),
+      fleetChatMsg("CEO Brain", "📡 " + cycleId + " complete: 60 agent reports → 5 squad Alpha digests → Full Study saved in the Results tab. Top finding: " + String(study.findings[0] || "fleet operational").slice(0, 220)),
+      ...SQUADS.map((sq) => fleetChatMsg("Squad " + sq + " Alpha", "Directive received from CEO Brain: " + String(study.directives[sq]).slice(0, 240))),
+    ].slice(-CHAT_CAP),
   }));
   setPhase("done");
   log("autopilot", "Squad cycle " + cycleId + " complete — directives routed to all 5 Alphas" + (study.offline ? " [offline]" : ""));
