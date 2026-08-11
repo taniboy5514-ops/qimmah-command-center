@@ -278,6 +278,7 @@ export function CEOChat({ S, up, log, user, go }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [S.chat.length, busy]);
 
+  // Browser voices load asynchronously — warm the list so the female voice is ready on first speak.
   useEffect(() => {
     try {
       if (!window.speechSynthesis) return;
