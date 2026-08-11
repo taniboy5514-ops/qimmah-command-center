@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle } from "lucide-react";
+import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText } from "lucide-react";
 import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls } from "./shared.jsx";
 import { resultMarkdown } from "./autopilot.jsx";
 /* ============================================================
@@ -567,6 +567,241 @@ function FleetStudyCard({ r, log }) {
 }
 
 /* ============================================================
+   DM GHOSTWRITER — the CEO Brain studies Sultan's real voice from
+   messages he actually sent, then drafts DMs in that voice.
+   Honest label: drafts ready to copy & send — no fake automation.
+   ============================================================ */
+const DM_GOALS = ["Reply to inquiry", "Follow up", "Close deal", "Upsell"];
+
+export function DMGhostwriter({ S, up, log }) {
+  const style = S.dmStyle || { samples: [], profile: "" };
+  const drafts = S.dmDrafts || [];
+  const [sample, setSample] = useState("");
+  const [learnBusy, setLearnBusy] = useState(false);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
+  const [form, setForm] = useState({ platform: "WhatsApp", who: "", goal: DM_GOALS[0], context: "", waNumber: "" });
+
+  function addSample() {
+    const t = sample.trim();
+    if (t.length < 10) return;
+    up((s) => ({ ...s, dmStyle: { ...(s.dmStyle || { samples: [], profile: "" }), samples: [...((s.dmStyle || {}).samples || []), t].slice(-12) } }));
+    setSample("");
+    log("system", "DM style sample added (" + t.length + " chars)");
+  }
+
+  async function learnStyle() {
+    if (learnBusy || style.samples.length < 3) return;
+    setLearnBusy(true); setError("");
+    try {
+      const sys = "You are a writing-style analyst. Study the example messages below — they are real messages Sultan (founder of Qimmah Digital, Oman) sent to clients and leads. "
+        + "Summarize his voice into a compact style profile (max 180 words) covering: language mix (English/Arabic words he uses), tone, emoji use (which ones, how often), typical length, how he greets, how he closes, how he talks about pricing and OMR amounts, and any signature phrases. "
+        + "Write it as direct instructions a ghostwriter can follow, e.g. \"Open with Marhaba + first name, keep it under 4 lines…\".";
+      const profile = await aiCall(S, sys, [{ role: "user", content: "Sultan's real messages:\n\n" + style.samples.map((m, i) => (i + 1) + ". " + m).join("\n") }]);
+      up((s) => ({ ...s, dmStyle: { ...(s.dmStyle || { samples: [] }), profile: profile.trim().slice(0, 1200) } }));
+      log("system", "DM Ghostwriter learned Sultan's style from " + style.samples.length + " samples");
+    } catch (e) {
+      setError(e && e.message ? e.message : "Style learning failed — try again.");
+    } finally {
+      setLearnBusy(false);
+    }
+  }
+
+  async function writeDM() {
+    if (draftBusy || !form.who.trim()) return;
+    setDraftBusy(true); setError("");
+    try {
+      const sys = "You are the DM Ghostwriter for Sultan, founder of Qimmah Digital (Oman). You write DMs in HIS exact voice — not generic sales copy.\n\n"
+        + "STYLE PROFILE (learned from his real messages):\n" + (style.profile || "No learned profile yet — infer his voice from the samples below.")
+        + (style.samples.length ? "\n\nHIS REAL MESSAGE SAMPLES:\n" + style.samples.map((m, i) => (i + 1) + ". " + m).join("\n") : "")
+        + "\n\nRULES: Match his language mix, emoji habits, length, greeting and closing exactly. Never sound like a marketing bot. Platform: " + form.platform + ". "
+        + "End your reply with a fenced json block exactly like:\n```json\n{\"variants\":[\"variant 1\",\"variant 2\",\"variant 3\"]}\n```\nKeep any prose before the json block free of JSON.";
+      const prompt = "Write 3 DM variants in Sultan's voice.\nPlatform: " + form.platform
+        + "\nWho this person is: " + form.who.trim()
+        + "\nGoal: " + form.goal
+        + (form.context.trim() ? "\nContext: " + form.context.trim() : "")
+        + "\nEach variant ready to paste and send as-is.";
+      const raw = await aiCall(S, sys, [{ role: "user", content: prompt }]);
+      const fence = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/```\s*(\{[\s\S]*?"variants"[\s\S]*?\})\s*```/);
+      let variants = null;
+      if (fence) { try { const p = JSON.parse(fence[1]); if (Array.isArray(p.variants)) variants = p.variants; } catch (e) { /* malformed */ } }
+      if (!variants || !variants.length) variants = [raw.replace(/```[\s\S]*?```/g, "").trim()];
+      const entry = {
+        id: uid(), platform: form.platform, who: form.who.trim().slice(0, 80), goal: form.goal,
+        variants: variants.slice(0, 3).map((v) => ({ text: String(v).slice(0, 900), copies: 0 })),
+        ts: Date.now(),
+      };
+      up((s) => ({ ...s, dmDrafts: [entry, ...(s.dmDrafts || [])].slice(0, 50) }));
+      log("system", "DM Ghostwriter drafted " + entry.variants.length + " " + form.platform + " messages (" + form.goal.toLowerCase() + ")");
+    } catch (e) {
+      setError(e && e.message ? e.message : "Drafting failed — try again.");
+    } finally {
+      setDraftBusy(false);
+    }
+  }
+
+  function copyVariant(draftId, idx, text) {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopied(draftId + ":" + idx);
+      setTimeout(() => setCopied(""), 1500);
+      up((s) => ({
+        ...s,
+        dmDrafts: (s.dmDrafts || []).map((d) => d.id === draftId
+          ? { ...d, variants: d.variants.map((v, i) => (i === idx ? { ...v, copies: (v.copies || 0) + 1 } : v)) }
+          : d),
+      }));
+    } catch (e) { /* clipboard blocked */ }
+  }
+
+  const waNum = form.waNumber.replace(/[^0-9]/g, "");
+
+  return (
+    <Card glow style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <MessageSquareText size={18} style={{ color: CYAN }} />
+        <div style={{ fontWeight: 700, fontSize: 15 }}>DM Ghostwriter</div>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FBBF24", padding: "2px 8px", borderRadius: 20, background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)" }}>
+          drafts ready to copy &amp; send
+        </span>
+      </div>
+      <p style={{ fontSize: 12.5, color: "#A5A0B8", margin: "0 0 16px", lineHeight: 1.6 }}>
+        The CEO Brain studies messages you actually sent and drafts new DMs in your voice. Nothing is sent automatically — you copy the draft and send it yourself.
+      </p>
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        {/* Step 1 — style learning */}
+        <div style={{ flex: "1 1 320px", minWidth: 280 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>1 · Teach it your voice</div>
+          <Field label={"Paste a message you really sent · " + style.samples.length + " saved (need 3+)"}>
+            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} placeholder="Marhaba Ahmed! Sultan here from Qimmah Digital — about the website we discussed…" value={sample} onChange={(e) => setSample(e.target.value)} />
+          </Field>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button style={btnGhost} onClick={addSample} disabled={sample.trim().length < 10}><Plus size={13} /> Add sample</button>
+            <button style={{ ...btnPrimary, opacity: style.samples.length >= 3 ? 1 : 0.45 }} onClick={learnStyle} disabled={learnBusy || style.samples.length < 3}>
+              <Sparkles size={14} /> {learnBusy ? "Learning your style…" : "Learn my style"}
+            </button>
+          </div>
+          {style.samples.length > 0 && style.samples.length < 3 && (
+            <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 8 }}>Add {3 - style.samples.length} more sample{3 - style.samples.length === 1 ? "" : "s"} to unlock style learning.</div>
+          )}
+          {style.samples.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6, maxHeight: 130, overflowY: "auto" }}>
+              {style.samples.map((m, i) => (
+                <div key={i} style={{ fontSize: 11.5, color: "#B7B2CC", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "6px 10px", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ whiteSpace: "pre-wrap" }}>{m.length > 90 ? m.slice(0, 90) + "…" : m}</span>
+                  <button style={{ background: "none", border: "none", color: "#6B6685", cursor: "pointer", padding: 0, flexShrink: 0 }}
+                    onClick={() => up((s) => ({ ...s, dmStyle: { ...(s.dmStyle || { samples: [], profile: "" }), samples: ((s.dmStyle || {}).samples || []).filter((_, x) => x !== i) } }))}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {style.profile ? (
+            <div style={{ marginTop: 12 }}>
+              <Field label="Your style profile · learned, editable">
+                <textarea style={{ ...inputStyle, minHeight: 110, resize: "vertical", fontSize: 12.5, lineHeight: 1.6 }}
+                  value={style.profile}
+                  onChange={(e) => up((s) => ({ ...s, dmStyle: { ...(s.dmStyle || { samples: [] }), profile: e.target.value.slice(0, 1500) } }))} />
+              </Field>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 10 }}>No style profile yet — paste 3+ real messages and tap "Learn my style".</div>
+          )}
+        </div>
+
+        {/* Step 2 — drafting */}
+        <div style={{ flex: "1 1 320px", minWidth: 280 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>2 · Draft a message</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Field label="Platform">
+              <select style={{ ...inputStyle, cursor: "pointer" }} value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+                {["WhatsApp", "Instagram"].map((p) => <option key={p} value={p} style={{ background: "#1a1327" }}>{p}</option>)}
+              </select>
+            </Field>
+            <Field label="Goal">
+              <select style={{ ...inputStyle, cursor: "pointer" }} value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })}>
+                {DM_GOALS.map((g) => <option key={g} value={g} style={{ background: "#1a1327" }}>{g}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <Field label="Who is this person? (one line)">
+              <input style={inputStyle} placeholder="Restaurant owner in Al Khuwair, asked about prices last week" value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value })} />
+            </Field>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <Field label="Context (optional)">
+              <textarea style={{ ...inputStyle, minHeight: 54, resize: "vertical" }} placeholder="He liked the Army Burger work, budget around OMR 300/mo…" value={form.context} onChange={(e) => setForm({ ...form, context: e.target.value })} />
+            </Field>
+          </div>
+          {form.platform === "WhatsApp" && (
+            <div style={{ marginTop: 10 }}>
+              <Field label="Recipient WhatsApp number (for the send button — you have +968 9176 3555)">
+                <input style={inputStyle} inputMode="tel" placeholder="968 9XXX XXXX" value={form.waNumber} onChange={(e) => setForm({ ...form, waNumber: e.target.value })} />
+              </Field>
+            </div>
+          )}
+          <button style={{ ...btnPrimary, marginTop: 12, opacity: form.who.trim() ? 1 : 0.45 }} onClick={writeDM} disabled={draftBusy || !form.who.trim()}>
+            <Sparkles size={14} /> {draftBusy ? "Writing in your voice…" : "Write DM"}
+          </button>
+          {error && <div style={{ fontSize: 12, color: "#FCA5A5", marginTop: 8 }}>{error}</div>}
+          {!style.profile && style.samples.length === 0 && (
+            <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 8 }}>Tip: drafts work best after you teach it your voice on the left.</div>
+          )}
+        </div>
+      </div>
+
+      {/* Drafts */}
+      {drafts.length > 0 && (
+        <div style={{ marginTop: 18, borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>Your drafts · {drafts.length}</div>
+            <button style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", fontSize: 11.5, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}
+              onClick={() => up((s) => ({ ...s, dmDrafts: [] }))}><Trash2 size={12} /> Clear all</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {drafts.map((d) => (
+              <div key={d.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: 12 }}>
+                <div style={{ fontSize: 10.5, color: "#6B6685", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                  {d.platform} · {d.goal} · to {d.who} · {timeAgo(d.ts)}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {d.variants.map((v, i) => {
+                    const waHref = d.platform === "WhatsApp" && waNum.length >= 8
+                      ? "https://wa.me/" + waNum + "?text=" + encodeURIComponent(v.text)
+                      : null;
+                    return (
+                      <div key={i} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 13, color: "#E9E4FB", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{v.text}</div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <button style={{ ...btnGhost, padding: "5px 12px", fontSize: 11.5 }} onClick={() => copyVariant(d.id, i, v.text)}>
+                            <Copy size={12} /> {copied === d.id + ":" + i ? "Copied" : "Copy"}{v.copies > 0 ? " · " + v.copies : ""}
+                          </button>
+                          {d.platform === "WhatsApp" && (
+                            <a href={waHref || undefined} target="_blank" rel="noreferrer"
+                              style={{ ...btnPrimary, padding: "5px 12px", fontSize: 11.5, textDecoration: "none", opacity: waHref ? 1 : 0.45, cursor: waHref ? "pointer" : "not-allowed", background: "linear-gradient(135deg,#059669,#047857)" }}
+                              onClick={(e) => { if (!waHref) { e.preventDefault(); return; } log("integration", "Ghostwriter DM opened in WhatsApp to +" + waNum); }}>
+                              <Send size={12} /> Send via WhatsApp
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ============================================================
    INTEGRATIONS HUB — real links, real composers, honest status
    ============================================================ */
 export function Integrations({ S, up, log }) {
@@ -608,6 +843,7 @@ export function Integrations({ S, up, log }) {
           </Card>
         ))}
       </div>
+      <DMGhostwriter S={S} up={up} log={log} />
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Card style={{ flex: "1 1 300px" }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#25D366", marginBottom: 12 }}>WhatsApp composer · sends for real</div>
