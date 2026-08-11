@@ -80,7 +80,9 @@ export const DEFAULT_STATE = {
   groqKey: "", elKey: "", elVoice: "Rachel", rate: 1, autoSpeak: true,
   agentsOff: {}, tasks: [], transactions: [], invoices: [], accounts: [],
   chat: [], insights: [], feed: [], opportunities: [], users: [], contracts: [],
-  autopilot: { auto: false, last: null },
+  autopilot: { auto: false, last: null, lastCycleAt: null, cycleCount: 0, nextTopicIdx: 0 },
+  results: [], // Hourly autopilot — every cycle saves a result here (cap 200)
+  studyQueue: [], // User-queued topics run before the rotating curriculum
   leads: [], bridge: { url: "", key: "" },
   knowledge: [], // CEO Brain — every topic the AI CEO has studied, kept forever
   lastFullBackup: null, // Timestamp of the last "Never-Zero" full backup export
