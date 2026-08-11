@@ -364,7 +364,7 @@ function App() {
 
   const views = {
     overview: <Overview S={S} go={setView} />,
-    ceo: <CEOChat S={S} up={up} log={log} user={user} />,
+    ceo: <CEOChat S={S} up={up} log={log} user={user} go={setView} />,
     study: <Study S={S} up={up} log={log} user={user} exportBrain={exportBrain} exportBackup={exportBackup} importBackup={importBackup} />,
     agents: <Agents S={S} up={up} log={log} squadRunning={squadRunning} squadPhase={squadPhase} onRunSquadNow={async () => {
       if (squadLock.current) return;
