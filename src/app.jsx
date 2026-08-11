@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { LayoutDashboard, MessageSquare, Brain, Users, ListTodo, BarChart3, Wallet, FileText, Inbox, Plug, Radio, Fish, Download, X, Trash2, Plus, Check } from "lucide-react";
-import { DEFAULT_STATE, loadState, saveState, pinHash, uid, PURPLE, CYAN, BG, glass, inputStyle, btnPrimary, btnGhost, Card, Field } from "./shared.jsx";
+import { DEFAULT_STATE, loadState, saveState, pinHash, uid, PURPLE, CYAN, BG, glass, inputStyle, btnPrimary, btnGhost, Card, Field, buildFullBackup, parseFullBackup, BackupControls } from "./shared.jsx";
 import { CEOChat } from "./views1.jsx";
 import { Agents, Tasks, Finance, Contracts, Leads } from "./views2.jsx";
 import { Analytics, MiroFish, Study, Integrations, LiveFeed, Overview, downloadFile, buildBrainMarkdown } from "./views3.jsx";
@@ -232,19 +232,32 @@ function App() {
   const log = (type, text) =>
     setS((s) => ({ ...s, feed: [{ id: uid(), type, text, ts: Date.now(), by: userRef.current ? userRef.current.name : "" }, ...s.feed].slice(0, 100) }));
 
-  function exportData() {
+  /* Never-Zero full backup — one JSON file with the ENTIRE persisted state. */
+  function exportBackup() {
     try {
-      const blob = new Blob([JSON.stringify(S, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "qimmah-backup-" + new Date().toISOString().slice(0, 10) + ".json";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      log("system", "Data backup exported");
+      const date = new Date().toISOString().slice(0, 10);
+      downloadFile("qimmah-full-backup-" + date + ".json", buildFullBackup(S), "application/json");
+      setS((s) => ({ ...s, lastFullBackup: Date.now() }));
+      log("system", "Full backup exported (qimmah-full-backup-" + date + ".json)");
     } catch (e) { /* export unavailable in this environment */ }
+  }
+
+  /* Restore the Command Center from a full backup file. */
+  function importBackup(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let restored = null;
+      try { restored = parseFullBackup(JSON.parse(String(reader.result))); } catch (e) { restored = null; }
+      if (!restored) {
+        alert("That file isn't a valid Qimmah full backup. Choose a qimmah-full-backup-*.json file exported from this app.");
+        return;
+      }
+      if (!window.confirm("Restore from backup? This replaces everything currently in the Command Center with the backup's contents.")) return;
+      setS((s) => ({ ...DEFAULT_STATE, ...restored, feed: [{ id: uid(), type: "system", text: "Command Center restored from full backup", ts: Date.now(), by: userRef.current ? userRef.current.name : "" }, ...(restored.feed || s.feed)].slice(0, 100) }));
+      alert("Backup restored. Your Command Center is back exactly as it was. ✅");
+    };
+    reader.onerror = () => alert("Couldn't read that file. Try again.");
+    reader.readAsText(file);
   }
 
   function exportBrain() {
@@ -295,7 +308,7 @@ function App() {
   const views = {
     overview: <Overview S={S} go={setView} />,
     ceo: <CEOChat S={S} up={up} log={log} user={user} />,
-    study: <Study S={S} up={up} log={log} user={user} exportBrain={exportBrain} />,
+    study: <Study S={S} up={up} log={log} user={user} exportBrain={exportBrain} exportBackup={exportBackup} importBackup={importBackup} />,
     agents: <Agents S={S} up={up} log={log} />,
     tasks: <Tasks S={S} up={up} log={log} />,
     analytics: <Analytics S={S} />,
@@ -348,7 +361,7 @@ function App() {
               <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: user.role === "owner" ? "#FBBF24" : "#8B86A3" }}>{user.role}</span>
             </span>
             {user.role === "owner" && <button style={btnGhost} onClick={() => setShowTeam(!showTeam)}><Users size={13} /> Team</button>}
-            {user.role === "owner" && <button style={btnGhost} onClick={exportData} title="Download all your data as a JSON backup">Backup</button>}
+            {user.role === "owner" && <BackupControls S={S} onExport={exportBackup} onImport={importBackup} />}
             {user.role === "owner" && (
               <button style={{ ...btnGhost, borderColor: "rgba(6,182,212,0.4)", color: CYAN }} onClick={exportBrain}
                 title="Download the full CEO brain: JSON backup + readable Markdown report. Saved to your Downloads — move it to your Desktop.">
