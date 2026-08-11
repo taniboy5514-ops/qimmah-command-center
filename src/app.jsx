@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { LayoutDashboard, MessageSquare, Brain, Users, ListTodo, BarChart3, Wallet, FileText, Inbox, Plug, Radio, Fish, Download, X, Trash2, Plus, Check } from "lucide-react";
+import { LayoutDashboard, MessageSquare, Brain, Users, ListTodo, BarChart3, Wallet, FileText, Inbox, Plug, Radio, Fish, Award, Download, X, Trash2, Plus, Check } from "lucide-react";
 import { DEFAULT_STATE, loadState, saveState, pinHash, uid, PURPLE, CYAN, BG, glass, inputStyle, btnPrimary, btnGhost, Card, Field, buildFullBackup, parseFullBackup, BackupControls } from "./shared.jsx";
 import { CEOChat } from "./views1.jsx";
 import { Agents, Tasks, Finance, Contracts, Leads } from "./views2.jsx";
 import { Analytics, MiroFish, Study, Integrations, LiveFeed, Overview, downloadFile, buildBrainMarkdown } from "./views3.jsx";
+import { Results, runCycle, dueCycles } from "./autopilot.jsx";
 /* ============================================================
    APP SHELL
    ============================================================ */
@@ -18,6 +19,7 @@ const NAV = [
   { id: "contracts", label: "Contracts", icon: FileText },
   { id: "leads", label: "Leads", icon: Inbox },
   { id: "integrations", label: "Integrations", icon: Plug },
+  { id: "results", label: "Results", icon: Award },
   { id: "feed", label: "Live Feed", icon: Radio },
   { id: "mirofish", label: "MiroFish", icon: Fish },
 ];
@@ -209,6 +211,35 @@ function App() {
   const saveTimer = useRef(null);
   const userRef = useRef(null);
   userRef.current = user;
+  const sRef = useRef(null);
+  sRef.current = S;
+  const cycleLock = useRef(false);
+  const [cycleRunning, setCycleRunning] = useState(false);
+
+  /* HOURLY AUTOPILOT ENGINE — once per clock hour a squad works and studies.
+     Checks every 60s; on open, missed hours are caught up silently (cap 8). */
+  useEffect(() => {
+    if (!S) return;
+    let alive = true;
+    async function tick(catchUp) {
+      if (cycleLock.current || !sRef.current) return;
+      let n = dueCycles(sRef.current, catchUp);
+      if (n <= 0) return;
+      cycleLock.current = true;
+      setCycleRunning(true);
+      try {
+        while (alive && n > 0 && sRef.current && dueCycles(sRef.current, false) > 0) {
+          await runCycle(sRef.current, setS, log, {});
+          n--;
+        }
+      } catch (e) { /* a failed cycle never stops the engine */ }
+      cycleLock.current = false;
+      if (alive) setCycleRunning(false);
+    }
+    tick(true); // silent catch-up of missed hours on app open
+    const t = setInterval(() => tick(false), 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [!!S]);
 
   useEffect(() => {
     let alive = true;
@@ -317,6 +348,14 @@ function App() {
     leads: <Leads S={S} up={up} log={log} />,
     integrations: <Integrations S={S} up={up} log={log} />,
     feed: <LiveFeed S={S} up={up} />,
+    results: <Results S={S} up={up} log={log} running={cycleRunning} onRunNow={async () => {
+      if (cycleLock.current) return;
+      cycleLock.current = true;
+      setCycleRunning(true);
+      try { await runCycle(sRef.current || S, setS, log, { force: true }); } catch (e) { /* cycle guards itself */ }
+      cycleLock.current = false;
+      setCycleRunning(false);
+    }} />,
     mirofish: <MiroFish S={S} up={up} log={log} />,
   };
 
