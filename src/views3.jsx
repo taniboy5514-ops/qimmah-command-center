@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle } from "lucide-react";
-import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW } from "./shared.jsx";
+import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls } from "./shared.jsx";
 /* ============================================================
    ANALYTICS — computed entirely from real entries
    ============================================================ */
@@ -255,7 +255,7 @@ export function buildBrainMarkdown(S) {
   return md;
 }
 
-export function Study({ S, up, log, user, exportBrain }) {
+export function Study({ S, up, log, user, exportBrain, exportBackup, importBackup }) {
   const [topic, setTopic] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -359,6 +359,7 @@ export function Study({ S, up, log, user, exportBrain }) {
               <Download size={14} /> Export Brain
             </button>
           )}
+          {isOwner && exportBackup && <BackupControls S={S} onExport={exportBackup} onImport={importBackup} />}
         </div>
         <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 10, lineHeight: 1.6 }}>
           The CEO researches the live open web via Groq Compound (web search built in — no extra keys, same free Groq key). If web search is unavailable on your key, it falls back to its trained knowledge and says so. Export Brain downloads two files (JSON backup + readable report). Saved to your Downloads — move it to your Desktop.

@@ -2,6 +2,8 @@
    QIMMAH DIGITAL — CEO COMMAND CENTER
    No demo data. Every number on screen comes from real input.
    ============================================================ */
+import { useRef } from "react";
+import { Download, Upload } from "lucide-react";
 
 export const PURPLE = "#7C3AED";
 export const CYAN = "#06B6D4";
@@ -81,6 +83,7 @@ export const DEFAULT_STATE = {
   autopilot: { auto: false, last: null },
   leads: [], bridge: { url: "", key: "" },
   knowledge: [], // CEO Brain — every topic the AI CEO has studied, kept forever
+  lastFullBackup: null, // Timestamp of the last "Never-Zero" full backup export
   memory: [], // Long-term memory — facts the AI CEO chose to keep forever
   deliverables: [], // Finished work products delivered by the agents (files)
   contacts: [ // Directory the AI CEO uses to reach workers, clients and the business
@@ -504,3 +507,50 @@ export function Field({ label, children }) {
 
 /* Kanban columns — shared by the Tasks board and the CEO action layer. */
 export const COLS = ["Backlog", "In Progress", "Review", "Done"];
+
+/* ============================================================
+   NEVER-ZERO FULL BACKUP — one JSON file with the ENTIRE state
+   ============================================================ */
+export function buildFullBackup(S) {
+  return JSON.stringify({
+    meta: { app: "qimmah-cc", version: 1, exportedAt: new Date().toISOString() },
+    state: S,
+  }, null, 2);
+}
+
+/* Validate a parsed backup file. Returns the restored state object or null. */
+export function parseFullBackup(data) {
+  if (!data || typeof data !== "object") return null;
+  if (!data.meta || data.meta.app !== "qimmah-cc") return null;
+  const st = data.state;
+  if (!st || typeof st !== "object") return null;
+  if (!Array.isArray(st.tasks) || !Array.isArray(st.transactions) || !Array.isArray(st.users)) return null;
+  return st;
+}
+
+/* Compact Backup / Restore buttons + freshness note. Used in the user bar
+   and in CEO Brain → Study Mode. */
+export function BackupControls({ S, onExport, onImport }) {
+  const fileRef = useRef(null);
+  const stale = !S.lastFullBackup || (Date.now() - S.lastFullBackup) > 7 * 86400000;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <button style={btnGhost} onClick={onExport} title="Download one JSON file with your ENTIRE Command Center — never lose your data">
+        <Download size={13} /> Backup
+      </button>
+      <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onImport(f); e.target.value = ""; }} />
+      <button style={btnGhost} onClick={() => fileRef.current && fileRef.current.click()} title="Restore the Command Center from a full backup file">
+        <Upload size={13} /> Restore
+      </button>
+      <span style={{ fontSize: 11, color: "#8B86A3" }}>
+        Last backup: {S.lastFullBackup ? timeAgo(S.lastFullBackup) : "never"}
+      </span>
+      {stale && (
+        <span style={{ fontSize: 11, color: "#FBBF24" }}>
+          ⚠ Protect your data — export a backup
+        </span>
+      )}
+    </span>
+  );
+}
