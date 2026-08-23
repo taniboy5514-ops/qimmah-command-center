@@ -510,9 +510,22 @@ export function CEOChat({ S, up, log, user, go }) {
           </div>
         </div>
 
-        {/* Voice settings */}
+        {/* Settings: API keys + voice */}
         {showVoice && (
           <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(124,58,237,0.05)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>Settings</div>
+            <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.18)" }}>
+              <Field label="Groq API key (powers the CEO Brain)">
+                <input style={inputStyle} type="password" placeholder="gsk_... paste a fresh key here anytime" value={S.groqKey}
+                  onChange={(e) => up((s) => ({ ...s, groqKey: e.target.value.trim() }))} />
+              </Field>
+              <div style={{ fontSize: 11.5, marginTop: 6, color: S.groqKey ? "#34D399" : "#F87171" }}>
+                {S.groqKey ? "● Key saved — CEO Brain is live" : "○ No key — fleet is running on offline templates"}
+              </div>
+              <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 4 }}>
+                Key invalid or expired? Get a fresh free key at console.groq.com → API Keys → Create, paste it here. Stored only on this device, sent only to Groq.
+              </div>
+            </div>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>Voice settings</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               <Field label="ElevenLabs key (optional)">
