@@ -77,7 +77,7 @@ export const VOICE_IDS = {
 };
 
 export const DEFAULT_STATE = {
-  groqKey: "", elKey: "", elVoice: "Rachel", rate: 1, autoSpeak: true,
+  groqKey: "", groqModel: "", elKey: "", elVoice: "Rachel", rate: 1, autoSpeak: true,
   agentsOff: {}, tasks: [], transactions: [], invoices: [], accounts: [],
   chat: [], insights: [], feed: [], opportunities: [], users: [], contracts: [],
   autopilot: { auto: true, last: null, lastCycleAt: null, cycleCount: 0, nextTopicIdx: 0 },
@@ -313,6 +313,19 @@ export function applyActions(actions, S, up, log) {
   return { results, links };
 }
 
+/* Model fallback chain — Groq retires model IDs over time (llama-3.3-70b-versatile
+   was shut down 2026-08-16). If the requested/default model is gone (404 or
+   decommissioned message), automatically try the next production model so the
+   fleet never goes silent. S.groqModel (Settings) forces a specific model first. */
+export const GROQ_MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "moonshotai/kimi-k2-instruct-0905", "meta-llama/llama-4-scout-17b-16e-instruct", "openai/gpt-oss-20b"];
+export const GROQ_MODEL_LABELS = {
+  "openai/gpt-oss-120b": "GPT-OSS 120B (default — production)",
+  "qwen/qwen3.6-27b": "Qwen 3.6 27B (multilingual, vision)",
+  "moonshotai/kimi-k2-instruct-0905": "Kimi K2 (agentic)",
+  "meta-llama/llama-4-scout-17b-16e-instruct": "Llama 4 Scout",
+  "openai/gpt-oss-20b": "GPT-OSS 20B (fastest, cheapest)",
+};
+
 /* opts.model overrides the default model (Study Mode uses groq/compound for live
    web search). opts.full returns { reply, sources } so callers can keep the web
    sources Groq Compound used. */
@@ -330,19 +343,32 @@ export async function aiCall(S, sys, messages, opts) {
     if (!reply) throw new Error("The AI returned an empty response. Try again.");
     return o.full ? { reply, sources: [] } : reply;
   }
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: "Bearer " + S.groqKey },
-    body: JSON.stringify({ model: o.model || "llama-3.3-70b-versatile", max_tokens: 1200, messages: [{ role: "system", content: sys }, ...messages] }),
-  });
-  if (!res.ok) {
+  const candidates = o.model
+    ? [o.model]
+    : [...new Set([S.groqModel, ...GROQ_MODELS].filter(Boolean))];
+  let res = null, lastErr = null;
+  for (let mi = 0; mi < candidates.length; mi++) {
+    const model = candidates[mi];
+    res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + S.groqKey },
+      body: JSON.stringify({ model, max_tokens: 1200, messages: [{ role: "system", content: sys }, ...messages] }),
+    });
+    if (res.ok) {
+      if (mi > 0) { o._usedModel = model; }
+      break;
+    }
     let detail = "";
-    try { const ej = await res.json(); detail = ej && ej.error && ej.error.message ? String(ej.error.message) : ""; } catch (e) { /* non-JSON error body */ }
+    try { const ej = await res.clone().json(); detail = ej && ej.error && ej.error.message ? String(ej.error.message) : ""; } catch (e) { /* non-JSON error body */ }
+    const modelGone = res.status === 404 || res.status === 400 && /decommission|does not exist|no longer supported/i.test(detail) || /decommission|does not exist|no longer supported/i.test(detail);
+    if (modelGone && mi < candidates.length - 1 && !o.model) { lastErr = { status: res.status, detail }; continue; }
     const msg = res.status === 401
       ? "Invalid Groq API key. Open Settings and paste a fresh key from console.groq.com."
       : res.status === 429
         ? "Groq rate limit reached. Wait about a minute, then try again."
-        : "Groq returned error " + res.status + ". Check your connection and try again.";
+        : modelGone
+          ? "Model unavailable on Groq. Open Settings and pick another AI model."
+          : "Groq returned error " + res.status + ". Check your connection and try again.";
     const err = new Error(detail && res.status !== 401 && res.status !== 429 ? msg + " (" + detail.slice(0, 160) + ")" : msg);
     err.status = res.status;
     err.detail = detail;

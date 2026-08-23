@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
+import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { downloadFile } from "./views3.jsx";
 /* ============================================================
@@ -450,7 +450,7 @@ export function CEOChat({ S, up, log, user, go }) {
   if (!S.groqKey && !IN_PREVIEW) {
     return (
       <div>
-        <SectionTitle eyebrow="AI CEO" title="Activate your AI CEO" sub="The AI CEO runs on Groq's Llama 3.3 70B — free tier available. Your key is stored only on this device and sent only to Groq." />
+        <SectionTitle eyebrow="AI CEO" title="Activate your AI CEO" sub="The AI CEO runs on Groq — free tier available. Your key is stored only on this device and sent only to Groq." />
         <Card glow style={{ maxWidth: 520 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
             <Sparkles size={20} style={{ color: PURPLE }} />
@@ -491,7 +491,7 @@ export function CEOChat({ S, up, log, user, go }) {
               <div style={{ fontWeight: 700, fontSize: 14.5 }}>AI CEO</div>
               <div style={{ fontSize: 11.5, color: speaking ? CYAN : "#34D399", display: "flex", alignItems: "center", gap: 5 }}>
                 <span className={speaking ? "q-blink" : ""} style={{ width: 6, height: 6, borderRadius: "50%", background: speaking ? CYAN : "#34D399", display: "inline-block" }} />
-                {speaking ? "Speaking…" : IN_PREVIEW ? "Online · Claude (preview engine)" : "Online · Groq Llama 3.3 70B"}
+                {speaking ? "Speaking…" : IN_PREVIEW ? "Online · Claude (preview engine)" : "Online · Groq " + (GROQ_MODEL_LABELS[S.groqModel] ? S.groqModel : "gpt-oss-120b") + ""}
               </div>
             </div>
           </div>
@@ -525,6 +525,12 @@ export function CEOChat({ S, up, log, user, go }) {
               <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 4 }}>
                 Key invalid or expired? Get a fresh free key at console.groq.com → API Keys → Create, paste it here. Stored only on this device, sent only to Groq.
               </div>
+              <Field label="AI model (auto falls back if one is retired)">
+                <select style={{ ...inputStyle, cursor: "pointer", marginTop: 8 }} value={S.groqModel || ""} onChange={(e) => up((s) => ({ ...s, groqModel: e.target.value }))}>
+                  <option value="" style={{ background: "#1a1327" }}>Auto (recommended) — tries the best live model</option>
+                  {GROQ_MODELS.map((m) => <option key={m} value={m} style={{ background: "#1a1327" }}>{GROQ_MODEL_LABELS[m] || m}</option>)}
+                </select>
+              </Field>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>Voice settings</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
