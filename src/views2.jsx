@@ -1,7 +1,42 @@
 import { useState, useRef } from "react";
 import { CheckCircle2, Circle, ListTodo, Plus, ChevronLeft, ChevronRight, Trash2, Wallet, FileText, Paperclip, Download, ExternalLink, Inbox, RefreshCw, Settings, Send } from "lucide-react";
-import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Field, glass, inputStyle, btnPrimary, btnGhost, uid, omr, timeAgo, lastMonths, REVENUE_TARGET, COLS, IN_PREVIEW } from "./shared.jsx";
+import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Field, glass, inputStyle, btnPrimary, btnGhost, uid, omr, timeAgo, lastMonths, REVENUE_TARGET, COLS, IN_PREVIEW, TOOL_CATALOG } from "./shared.jsx";
 import { SquadCyclePanel, SquadDirectiveCards, FleetActivity } from "./squadcycle.jsx";
+/* ============================================================
+   SQUAD TOOLKIT — static mirror of the MCP registry
+   (TOOL_CATALOG in shared.jsx). Green = runs automatically,
+   amber = requires human approval via the Pending Approvals card.
+   ============================================================ */
+export function SquadToolkit() {
+  return (
+    <Card style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: CYAN, fontWeight: 600 }}>Squad Toolkits · MCP</div>
+        <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#8B86A3" }}>
+          <span><span style={{ color: "#34D399" }}>●</span> automatic</span>
+          <span><span style={{ color: "#FBBF24" }}>●</span> needs approval</span>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+        {Object.entries(SQUAD_META).map(([sq, m]) => {
+          const tools = TOOL_CATALOG.filter((t) => t.squads.includes(sq));
+          return (
+            <div key={sq} style={{ ...glass, padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: m.color, marginBottom: 8 }}>Squad {sq} · {m.role}</div>
+              {tools.map((t) => (
+                <div key={t.name} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }} title={t.desc}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: t.approval ? "#FBBF24" : "#34D399", boxShadow: "0 0 6px " + (t.approval ? "#FBBF24" : "#34D399") }} />
+                  <span style={{ fontSize: 12, color: "#C9C4DE", fontFamily: "monospace" }}>{t.name}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 /* ============================================================
    AGENTS — the 60-agent fleet
    ============================================================ */
@@ -15,6 +50,7 @@ export function Agents({ S, up, log, squadRunning, squadPhase, onRunSquadNow }) 
     <div>
       <SectionTitle eyebrow="The Fleet" title="60 AI Agents · 5 Squads" sub="Toggle agents on or off based on live client needs. The AI CEO knows every one of them by code and specialty." />
       <SquadCyclePanel S={S} up={up} log={log} onRunNow={onRunSquadNow} running={squadRunning} phase={squadPhase} />
+      <SquadToolkit />
       <FleetActivity S={S} />
       <SquadDirectiveCards S={S} />
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
