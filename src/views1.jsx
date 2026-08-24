@@ -508,6 +508,16 @@ export function AutopilotPanel({ S, up, log, user }) {
   );
 }
 
+/* Free neural female voices (Microsoft Edge TTS via /api/tts — no key needed).
+   Honest caveat: unofficial free service, could change or be rate-limited. */
+export const EDGE_VOICES = {
+  Aria: "en-US-AriaNeural",              // warm, natural (default)
+  Jenny: "en-US-JennyNeural",            // friendly
+  Michelle: "en-US-MichelleNeural",      // clear
+  Sonia: "en-GB-SoniaNeural",            // British
+  "Zariyah (Arabic)": "ar-SA-ZariyahNeural",
+};
+
 /* ============================================================
    AI CEO CHAT — direct Groq API, voice in/out, insights
    ============================================================ */
@@ -521,6 +531,7 @@ export function CEOChat({ S, up, log, user, go }) {
   const [keyDraft, setKeyDraft] = useState("");
   const [copied, setCopied] = useState("");
   const [showSkills, setShowSkills] = useState(false);
+  const [voiceEngine, setVoiceEngine] = useState(""); // engine that last spoke: ElevenLabs | Neural (free) | Browser voice
   const scrollRef = useRef(null);
   const recRef = useRef(null);
   const audioRef = useRef(null);
@@ -549,6 +560,7 @@ export function CEOChat({ S, up, log, user, go }) {
   async function speak(text) {
     stopAudio();
     const clean = text.replace(/[*#_`>]/g, "").slice(0, 2500);
+    /* Voice engine chain: ElevenLabs (if key) → free Edge neural voice → browser voice. */
     if (S.elKey) {
       try {
         const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + VOICE_IDS[S.elVoice], {
@@ -563,13 +575,34 @@ export function CEOChat({ S, up, log, user, go }) {
           a.playbackRate = S.rate;
           audioRef.current = a;
           setSpeaking(true);
+          setVoiceEngine("ElevenLabs");
           a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
           a.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); };
           await a.play();
           return;
         }
-      } catch (e) { /* fall through to browser voice */ }
+      } catch (e) { /* fall through to free neural voice */ }
     }
+    /* Free neural voice — Microsoft Edge neural TTS via /api/tts (no key needed). */
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean.slice(0, 2000), voice: EDGE_VOICES[S.edgeVoice] || EDGE_VOICES.Aria, rate: S.rate }),
+      });
+      if (!res.ok) throw new Error("TTS " + res.status);
+      const blob = await res.blob();
+      if (!blob.size) throw new Error("Empty audio");
+      const url = URL.createObjectURL(blob);
+      const a = new Audio(url);
+      audioRef.current = a; // speed is baked in server-side via the rate parameter
+      setSpeaking(true);
+      setVoiceEngine("Neural (free)");
+      a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      a.onerror = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      await a.play();
+      return;
+    } catch (e) { /* fall through to browser voice (preview, endpoint down, etc.) */ }
     try {
       const u = new SpeechSynthesisUtterance(clean);
       u.rate = S.rate;
@@ -579,6 +612,7 @@ export function CEOChat({ S, up, log, user, go }) {
       u.onend = () => setSpeaking(false);
       u.onerror = () => setSpeaking(false);
       setSpeaking(true);
+      setVoiceEngine("Browser voice");
       window.speechSynthesis.speak(u);
     } catch (e) { setSpeaking(false); }
   }
@@ -868,16 +902,38 @@ export function CEOChat({ S, up, log, user, go }) {
                 </select>
               </Field>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10 }}>Voice settings</div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#C4B5FD", marginBottom: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              Voice settings
+              <span style={{ fontSize: 10, letterSpacing: 1, padding: "2px 9px", borderRadius: 20, fontWeight: 700,
+                ...(S.elKey
+                  ? { color: "#FFB020", background: "rgba(255,176,32,0.12)", border: "1px solid rgba(255,176,32,0.35)" }
+                  : voiceEngine === "Browser voice"
+                    ? { color: "#8B86A3", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.15)" }
+                    : { color: "#34D399", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.35)" }) }}>
+                Engine: {S.elKey ? "ElevenLabs" : (voiceEngine || "Neural (free)")}
+              </span>
+            </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               <Field label="ElevenLabs key (optional)">
-                <input style={inputStyle} type="password" placeholder="Leave empty to use browser voice" value={S.elKey} onChange={(e) => up((s) => ({ ...s, elKey: e.target.value.trim() }))} />
+                <input style={inputStyle} type="password" placeholder="Leave empty — free neural voice is used" value={S.elKey} onChange={(e) => up((s) => ({ ...s, elKey: e.target.value.trim() }))} />
               </Field>
-              <Field label="Voice preset (all female AI voices)">
-                <select style={{ ...inputStyle, cursor: "pointer" }} value={S.elVoice} onChange={(e) => up((s) => ({ ...s, elVoice: e.target.value }))}>
-                  {Object.keys(VOICE_IDS).map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
-                </select>
-              </Field>
+              {S.elKey ? (
+                <Field label="Voice preset (ElevenLabs — all female AI voices)">
+                  <select style={{ ...inputStyle, cursor: "pointer" }} value={S.elVoice} onChange={(e) => up((s) => ({ ...s, elVoice: e.target.value }))}>
+                    <optgroup label="ElevenLabs voices">
+                      {Object.keys(VOICE_IDS).map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
+                    </optgroup>
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Voice preset (free neural — no key needed)">
+                  <select style={{ ...inputStyle, cursor: "pointer" }} value={S.edgeVoice || "Aria"} onChange={(e) => up((s) => ({ ...s, edgeVoice: e.target.value }))}>
+                    <optgroup label="Free neural voices (no key)">
+                      {Object.keys(EDGE_VOICES).map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
+                    </optgroup>
+                  </select>
+                </Field>
+              )}
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <Field label={"Speed · " + S.rate.toFixed(1) + "x"}>
@@ -886,8 +942,8 @@ export function CEOChat({ S, up, log, user, go }) {
               <button style={btnGhost} onClick={() => speak("Marhaba Sultan. Qimmah Digital voice system is live and ready.")}><Volume2 size={14} /> Test voice</button>
             </div>
             <div style={{ fontSize: 11.5, color: "#8B86A3", marginTop: 8 }}>
-              No ElevenLabs key? A female built-in browser voice is used automatically — free, always available.
-              {IN_PREVIEW && " Note: in this preview, ElevenLabs is blocked by the sandbox, so the browser voice is always used. Your ElevenLabs key activates after you deploy."}
+              No ElevenLabs key? You now get a free natural neural voice automatically — no key needed. (Unofficial free Microsoft Edge service.) The speed slider applies to it too. If it's ever unavailable, the built-in browser voice takes over.
+              {IN_PREVIEW && " Note: in this preview, ElevenLabs and the /api/tts endpoint are unreachable from the sandbox, so the browser voice is used here. The free neural voice activates after you deploy."}
             </div>
           </div>
         )}
