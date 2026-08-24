@@ -92,6 +92,14 @@ export const DEFAULT_STATE = {
   deliverables: [], // Finished work products delivered by the agents (files)
   dmStyle: { samples: [], profile: "" }, // DM Ghostwriter — Sultan's real message samples + learned style profile
   dmDrafts: [], // DM Ghostwriter drafts (cap 50) — drafts ready to copy & send
+  /* Credentials vault — stored only on this device (localStorage), never emailed
+     or sent anywhere except the matching official API. */
+  integrations: {
+    whatsapp: { token: "", phoneNumberId: "" },
+    instagram: { token: "", appId: "", appSecret: "" },
+    video: { service: "YouTube", key: "", project: "" },
+  },
+  github: { token: "", owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", connectedAt: null }, // AI CEO self-edit connection
   contacts: [ // Directory the AI CEO uses to reach workers, clients and the business
     { id: "c-wa", name: "Qimmah Digital WhatsApp Business", role: "Business channel", phone: "96891763555", email: "" },
     { id: "c-phone", name: "Qimmah Digital Phone", role: "Business channel", phone: "96875037654", email: "" },
