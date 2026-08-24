@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
-import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText } from "lucide-react";
+import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText, Github, Video, ShieldCheck } from "lucide-react";
 import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls } from "./shared.jsx";
+import { testGhConnection } from "./github-sync.js";
 import { resultMarkdown } from "./autopilot.jsx";
 /* ============================================================
    ANALYTICS — computed entirely from real entries
@@ -804,9 +805,33 @@ export function DMGhostwriter({ S, up, log }) {
 /* ============================================================
    INTEGRATIONS HUB — real links, real composers, honest status
    ============================================================ */
+/* Credentials vault helpers — one status pill + password inputs per card.
+   Everything is stored in S (localStorage on this device only). */
+function VaultStatus({ ok, okText }) {
+  return (
+    <span style={{
+      fontSize: 10.5, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase",
+      padding: "3px 9px", borderRadius: 20, whiteSpace: "nowrap",
+      color: ok ? "#34D399" : "#8B86A3",
+      background: ok ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
+      border: "1px solid " + (ok ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.12)"),
+    }}>
+      {ok ? (okText || "Configured ✓") : "Not connected"}
+    </span>
+  );
+}
+function VaultInput({ label, value, onChange, placeholder, type }) {
+  return (
+    <Field label={label}>
+      <input type={type || "password"} autoComplete="off" style={inputStyle} placeholder={placeholder} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+}
+
 export function Integrations({ S, up, log }) {
   const [wa, setWa] = useState({ phone: "", msg: "" });
   const [em, setEm] = useState({ to: "", subject: "", body: "" });
+  const [ghTest, setGhTest] = useState({ phase: "idle", msg: "" });
 
   const waPhone = wa.phone.replace(/[^0-9]/g, "");
   const waReady = waPhone.length >= 8 && wa.msg.trim().length > 0;
@@ -819,6 +844,47 @@ export function Integrations({ S, up, log }) {
     opacity: ready ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed",
   });
 
+  /* Vault state with safe defaults for older saved states. */
+  const integ = { whatsapp: {}, instagram: {}, video: { service: "YouTube" }, ...(S.integrations || {}) };
+  const gh = { owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...(S.github || {}) };
+  const setInteg = (key, patch) => up((s) => {
+    const cur = { whatsapp: {}, instagram: {}, video: { service: "YouTube" }, ...(s.integrations || {}) };
+    return { ...s, integrations: { ...cur, [key]: { ...(cur[key] || {}), ...patch } } };
+  });
+  const setGh = (patch) => up((s) => ({
+    ...s,
+    github: { token: "", owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...(s.github || {}), ...patch },
+  }));
+
+  const waConfigured = Boolean(integ.whatsapp.token && integ.whatsapp.phoneNumberId);
+  const igConfigured = Boolean(integ.instagram.token && integ.instagram.appId && integ.instagram.appSecret);
+  const videoConfigured = Boolean(integ.video.service && integ.video.key);
+
+  async function testGithub() {
+    if (!gh.token.trim()) { setGhTest({ phase: "err", msg: "Paste your personal access token first." }); return; }
+    setGhTest({ phase: "testing", msg: "" });
+    try {
+      const fullName = await testGhConnection({ ...gh, token: gh.token.trim() });
+      setGh({ token: gh.token.trim(), connectedAt: Date.now() });
+      setGhTest({ phase: "ok", msg: "✓ Connected to " + fullName });
+      log("integration", "GitHub connected: " + fullName + " (" + (gh.branch || "main") + ")");
+    } catch (e) {
+      setGh({ connectedAt: null });
+      setGhTest({ phase: "err", msg: e && e.message ? e.message : "Connection failed." });
+      log("integration", "GitHub connection failed: " + (e && e.message ? e.message : "unknown error"));
+    }
+  }
+
+  const vaultCardTitle = (color, icon, label, statusEl) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color, display: "flex", alignItems: "center", gap: 7 }}>{icon} {label}</div>
+      {statusEl}
+    </div>
+  );
+  const guideStyle = { fontSize: 12, color: "#A5A0B8", lineHeight: 1.6, margin: "0 0 12px" };
+  const linkStyle = { color: CYAN, textDecoration: "none" };
+  const deviceNote = <div style={{ fontSize: 11, color: "#8B86A3", marginTop: 4 }}>🔒 Stored only on this device — never emailed, never sent to our servers.</div>;
+
   const platforms = [
     { name: "Instagram", color: "#E1306C", href: "https://www.instagram.com/accounts/login/", note: "Opens Instagram login. Automated posting and DM replies require the official Instagram Business API via Meta — a verified Business account and app review." },
     { name: "WhatsApp", color: "#25D366", href: "https://web.whatsapp.com/", note: "Opens WhatsApp Web. The composer below sends real messages through wa.me — works today, no API needed. Full automation requires the WhatsApp Business API." },
@@ -829,6 +895,13 @@ export function Integrations({ S, up, log }) {
   return (
     <div>
       <SectionTitle eyebrow="Channels" title="Integrations Hub" sub="Every button here does something real. Where official APIs are required, the card says so plainly — no fake 'connected' badges." />
+
+      {/* Security banner — replaces the old "email us your API keys" idea. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, marginBottom: 18, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 13, color: "#FDE68A" }}>
+        <ShieldCheck size={18} style={{ flexShrink: 0, color: "#FBBF24" }} />
+        <span><b>Never send API keys by email or DM.</b> Keys stay in this device vault — saved only in this browser's local storage and used only for direct calls to each official API.</span>
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, marginBottom: 18 }}>
         {platforms.map((p) => (
           <Card key={p.name}>
@@ -843,6 +916,81 @@ export function Integrations({ S, up, log }) {
           </Card>
         ))}
       </div>
+
+      {/* CREDENTIALS VAULT */}
+      <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: PURPLE, marginBottom: 12 }}>Credentials vault</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 18 }}>
+
+        <Card>
+          {vaultCardTitle("#25D366", <Send size={14} />, "WhatsApp Business API", <VaultStatus ok={waConfigured} />)}
+          <p style={guideStyle}>
+            Create a Meta app at <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={linkStyle}>developers.facebook.com</a> → add the <b>WhatsApp</b> product.
+            The API Setup panel gives you the Access Token (make it permanent under System Users) and the Phone Number ID.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <VaultInput label="Access Token" value={integ.whatsapp.token} onChange={(v) => setInteg("whatsapp", { token: v })} placeholder="EAA…" />
+            <VaultInput label="Phone Number ID" value={integ.whatsapp.phoneNumberId} onChange={(v) => setInteg("whatsapp", { phoneNumberId: v })} placeholder="e.g. 123456789012345" />
+            {deviceNote}
+          </div>
+        </Card>
+
+        <Card>
+          {vaultCardTitle("#E1306C", <ExternalLink size={14} />, "Instagram Graph API", <VaultStatus ok={igConfigured} />)}
+          <p style={guideStyle}>
+            At <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={linkStyle}>developers.facebook.com</a> open your app → add the <b>Instagram Graph API</b> product.
+            App ID &amp; App Secret are under Settings → Basic; create a long-lived token via Graph API Explorer.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <VaultInput label="Access Token" value={integ.instagram.token} onChange={(v) => setInteg("instagram", { token: v })} placeholder="IGA… / EAA…" />
+            <VaultInput label="App ID" value={integ.instagram.appId} onChange={(v) => setInteg("instagram", { appId: v })} placeholder="e.g. 9876543210" />
+            <VaultInput label="App Secret" value={integ.instagram.appSecret} onChange={(v) => setInteg("instagram", { appSecret: v })} placeholder="32-character secret" />
+            {deviceNote}
+          </div>
+        </Card>
+
+        <Card>
+          {vaultCardTitle(CYAN, <Video size={14} />, "Video Hosting", <VaultStatus ok={videoConfigured} />)}
+          <p style={guideStyle}>
+            <b>YouTube:</b> create an API key at <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" style={linkStyle}>console.cloud.google.com</a> (enable YouTube Data API v3).{" "}
+            <b>Vimeo:</b> developer.vimeo.com → My Apps → Generate access token. <b>S3:</b> IAM access key + bucket name.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Field label="Service">
+              <select style={{ ...inputStyle, background: "#1a1327" }} value={integ.video.service || "YouTube"} onChange={(e) => setInteg("video", { service: e.target.value })}>
+                {["YouTube", "Vimeo", "S3", "Other"].map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v}</option>)}
+              </select>
+            </Field>
+            <VaultInput label="API key / token" value={integ.video.key} onChange={(v) => setInteg("video", { key: v })} placeholder="Paste the key or token" />
+            <VaultInput label="Project / bucket name" type="text" value={integ.video.project} onChange={(v) => setInteg("video", { project: v })} placeholder="e.g. qimmah-videos" />
+            {deviceNote}
+          </div>
+        </Card>
+
+        <Card>
+          {vaultCardTitle("#E9E4FB", <Github size={14} />, "GitHub — self-edit", <VaultStatus ok={Boolean(gh.token && gh.connectedAt)} okText="Connected ✓" />)}
+          <p style={guideStyle}>
+            Lets the AI CEO change this Command Center when you ask. Create a fine-grained token at{" "}
+            <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noreferrer" style={linkStyle}>github.com/settings/personal-access-tokens</a>{" "}
+            — access to <b>this repo only</b>, permission <b>Contents: Read and write</b>.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <VaultInput label="Personal Access Token" value={gh.token} onChange={(v) => { setGh({ token: v, connectedAt: null }); setGhTest({ phase: "idle", msg: "" }); }} placeholder="github_pat_…" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <VaultInput label="Owner" type="text" value={gh.owner} onChange={(v) => setGh({ owner: v.trim() || "taniboy5514-ops" })} placeholder="taniboy5514-ops" />
+              <VaultInput label="Repo" type="text" value={gh.repo} onChange={(v) => setGh({ repo: v.trim() || "qimmah-command-center" })} placeholder="qimmah-command-center" />
+            </div>
+            <VaultInput label="Branch" type="text" value={gh.branch} onChange={(v) => setGh({ branch: v.trim() || "main" })} placeholder="main" />
+            <button style={{ ...btnPrimary, opacity: ghTest.phase === "testing" ? 0.6 : 1 }} disabled={ghTest.phase === "testing"} onClick={testGithub}>
+              <Github size={14} /> {ghTest.phase === "testing" ? "Testing…" : "Test connection"}
+            </button>
+            {ghTest.phase === "ok" && <div style={{ fontSize: 12, color: "#34D399" }}>{ghTest.msg}</div>}
+            {ghTest.phase === "err" && <div style={{ fontSize: 12, color: "#F87171" }}>{ghTest.msg}</div>}
+            {!ghTest.msg && gh.connectedAt && <div style={{ fontSize: 12, color: "#34D399" }}>✓ Connected to {gh.owner}/{gh.repo} ({gh.branch}) · {timeAgo(gh.connectedAt)}</div>}
+            {deviceNote}
+          </div>
+        </Card>
+      </div>
+
       <DMGhostwriter S={S} up={up} log={log} />
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Card style={{ flex: "1 1 300px" }}>
