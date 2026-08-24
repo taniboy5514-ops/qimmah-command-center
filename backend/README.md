@@ -92,6 +92,50 @@ tool schemas via `GET /api/mcp/discover` (`x-api-key` header).
 
 Auth: JWT in an httpOnly `qimmah_session` cookie (`{ userId, workspaceId }`, 30d).
 
+## Goal Mode
+
+The CEO Brain turns an objective ("get me 5 clients by Friday", "goal: …")
+into a DAG of steps (`goal_steps`) and executes each step through the same
+6-gate MCP executor (`backend/lib/agents/executor.js`) — so authorization,
+rate limits, budgets, approvals and validation all apply unchanged.
+
+- Planning: AI-first via `callGroq` (`backend/lib/ceo/goals.js` → `planGoal`),
+  with a deterministic fallback planner built from the 8 skill templates in
+  `backend/lib/ceo/skills.js` when Groq is unavailable.
+- Execution: `processGoal(goalId)` advances READY steps (respecting
+  `depends_on`), retries failed steps up to 2 times with linear backoff
+  (`attempts × 2 min`), and blocks steps whose tools require approval
+  (`tool_approvals` row — approving in the UI executes the tool and the next
+  processor run marks the step done). When all steps finish, the goal is
+  completed and a summary lands in the feed.
+- Tables (run `backend/schema-goals.sql` after `schema.sql` and
+  `schema-mcp.sql`): `goals`, `goal_steps`, `goal_events`, `skills`
+  (8 built-in seed rows), `knowledge_edges` — same `jwt_workspace_id()` RLS,
+  realtime publication for `goals` + `goal_steps`.
+
+| Route                     | Methods           | Description                                  |
+| ------------------------- | ----------------- | -------------------------------------------- |
+| `/api/ceo/goals`          | GET / POST / PATCH | List goals; create+plan from `{prompt}`; pause/resume/cancel |
+| `/api/ceo/goals/execute`  | POST              | Manually advance one goal (`{goalId}`)       |
+| `/api/cron/goal-processor` | GET              | Cron-guarded; advances all active goals      |
+
+Setup order: `schema.sql` → `schema-mcp.sql` → `schema-goals.sql`, then add
+the cron row (already merged in `vercel.json`, `*/15 * * * *`). On the Vercel
+Hobby plan only daily crons run reliably — adjust both schedules to once
+daily if needed. Test with:
+
+```bash
+curl -X POST https://<your-app>/api/ceo/goals \
+  -H 'Content-Type: application/json' --cookie 'qimmah_session=<token>' \
+  -d '{"prompt":"goal: research the Oman restaurant market"}'
+```
+
+> Honest note: goal steps run real tools, but web_search/study_topic are LLM
+> knowledge synthesis (not a live crawl) and WhatsApp/Instagram steps return
+> mock success until Meta credentials are configured — Goal Mode inherits the
+> same limits as the MCP tool system above.
+
+
 ## 4-week migration path (from localStorage to cloud)
 
 1. **Week 1 — Cloud sync button.** Add a "Sync to cloud" button in Settings that
