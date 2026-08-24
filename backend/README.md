@@ -41,6 +41,7 @@ No Next.js. Any file in `api/` is a serverless function. Shared code lives in
 | `GROQ_API_KEY`              | Groq console                                           |
 | `JWT_SECRET`                | `openssl rand -hex 32`                                 |
 | `CRON_SECRET`               | `openssl rand -hex 32`                                 |
+| `MCP_API_KEY`               | `openssl rand -hex 32` — unlocks full MCP tool schemas on `/api/mcp/discover` |
 
 > The service-role key bypasses RLS — it must **never** be exposed to the
 > browser. Only the `/api` functions use it. No `VITE_` prefix on any secret.
@@ -66,6 +67,28 @@ schedule to once daily if needed.
 | `/api/studies`        | GET / POST          | Knowledge base; POST runs a Groq research study    |
 | `/api/agents/cycle`   | POST                | Run one squad cycle for your workspace             |
 | `/api/cron/squad-cycle` | GET               | Cron-guarded; runs the cycle for all workspaces    |
+| `/api/agents/execute-tool` | POST           | Execute one MCP tool for an agent (6-gate pipeline) |
+| `/api/mcp/discover`   | GET                 | MCP discovery — public tool list, full schemas with `x-api-key` |
+| `/api/mcp/approve`    | GET / POST          | List pending approvals; approve/reject (approved tools execute immediately) |
+
+## MCP tool system
+
+13 MCP-compatible tools in `backend/lib/mcp/registry.js` (messaging, CRM,
+research, finance, tasks, self-edit, analytics, connector tests). Per-agent
+toolkits in `backend/lib/agents/toolkit.js` (squad defaults + `agent_toolkits`
+overrides + daily budget gates). The 6-gate executor
+(`backend/lib/agents/executor.js`): exists → authorized → rate limit → budget →
+approval → validation, then execute + log to `tool_executions` and the feed.
+
+Setup: run `backend/schema-mcp.sql` in the Supabase SQL editor after
+`schema.sql` (adds `agent_toolkits`, `tool_executions`, `tool_approvals` with
+the same workspace-isolation RLS + realtime). Set `MCP_API_KEY` to expose full
+tool schemas via `GET /api/mcp/discover` (`x-api-key` header).
+
+> Honest limits: WhatsApp and Instagram tools return mock success until Meta
+> API credentials are configured; web_search and study_topic are LLM knowledge
+> synthesis, not a live web crawl; self_edit_code stages edits only — commits
+> go through the human-approved GitHub flow.
 
 Auth: JWT in an httpOnly `qimmah_session` cookie (`{ userId, workspaceId }`, 30d).
 

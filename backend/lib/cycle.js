@@ -8,6 +8,7 @@
  */
 import { assertSupabase, logFeed } from "./supabase.js";
 import { alphaDigest, ceoStudy } from "./groq.js";
+import { executeTool } from "./agents/executor.js";
 
 const SQUADS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
 
@@ -67,16 +68,54 @@ export async function runSquadCycle(workspaceId) {
     reportsBySquad[a.squad]?.push({ agent: `${a.code} (${a.name})`, report });
   }
 
-  // 2) Five squad digests via Groq.
+  // 2) Five squad digests via Groq. Squads whose agents carry the
+  //    study_topic tool (Beta/Gamma/Delta) route through the MCP executor
+  //    so the call is logged in tool_executions; anything else falls back
+  //    to the direct alphaDigest call.
+  const toolContextFor = (squad) => {
+    const lead = agents.find((a) => a.squad === squad && a.active) || agents.find((a) => a.squad === squad);
+    return lead ? {
+      workspaceId, agentId: lead.id, squadCode: squad,
+      agentName: `${lead.code} (${lead.name})`,
+    } : null;
+  };
   const digests = [];
   for (const squad of SQUADS) {
-    const { digest, model } = await alphaDigest(squad, reportsBySquad[squad]);
+    let digest = null, model = "unknown";
+    const ctx = toolContextFor(squad);
+    if (ctx && ["Beta", "Gamma", "Delta"].includes(squad)) {
+      const r = await executeTool("study_topic", {
+        topic: `Squad ${squad} cycle digest. Reports:\n` +
+          reportsBySquad[squad].map((x) => `${x.agent}: ${x.report}`).join("\n").slice(0, 3000),
+      }, ctx);
+      if (r.success && r.result?.brief) {
+        digest = r.result.brief;
+        model = r.result.model || "unknown";
+      }
+    }
+    if (!digest) {
+      const d = await alphaDigest(squad, reportsBySquad[squad]);
+      digest = d.digest; model = d.model;
+    }
     digests.push({ squad, digest, model });
     await logFeed(workspaceId, "cycle", `Squad ${squad} digest ready (model: ${model})`);
   }
 
-  // 3) CEO study across the digests.
-  const study = await ceoStudy(digests);
+  // 3) CEO study across the digests — routed through the MCP study_topic
+  //    tool when a Gamma analyst is available; direct ceoStudy fallback
+  //    preserves the structured directives JSON.
+  let study;
+  const gammaCtx = toolContextFor("Gamma");
+  if (gammaCtx) {
+    const r = await executeTool("study_topic", {
+      topic: "CEO cross-squad study from digests:\n" +
+        digests.map((d) => `[${d.squad}] ${d.digest}`).join("\n\n").slice(0, 5000),
+    }, gammaCtx);
+    if (r.success && r.result?.brief) {
+      study = { findings: [r.result.brief], crossInsights: [], directives: {}, model: r.result.model, viaTool: "study_topic" };
+    }
+  }
+  if (!study) study = await ceoStudy(digests);
 
   // 4) Persist: deactivate old directives, insert new ones per squad.
   await db.from("squad_directives").update({ active: false })
