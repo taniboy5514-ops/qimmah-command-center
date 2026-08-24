@@ -1,0 +1,91 @@
+# Qimmah Command Center — Backend
+
+Serverless backend for the Qimmah CEO Command Center: Vercel `/api` functions +
+Supabase Postgres (RLS) + Groq (server-side key) + Vercel Cron.
+
+## Architecture
+
+```
+Browser (React/Vite on Vercel)
+  └─> /api/*  serverless functions (Node, ESM, `export default handler`)
+        ├─> Supabase Postgres  (service-role key server-side, RLS for direct clients)
+        └─> Groq API           (model fallback chain, key server-side)
+  Vercel Cron ──GET /api/cron/squad-cycle (Bearer CRON_SECRET)──> runs squad cycle
+```
+
+No Next.js. Any file in `api/` is a serverless function. Shared code lives in
+`backend/lib/` (`supabase.js`, `groq.js`, `auth.js`, `cycle.js`).
+
+## Setup
+
+### 1. Create a Supabase project
+
+1. <https://supabase.com/dashboard> → New project (free tier).
+2. SQL Editor → paste the contents of `backend/schema.sql` → Run.
+   This creates the 15 tables, indexes, RLS policies, realtime publication
+   (`feed_entries`, `squad_directives`) and the `provision_workspace(name, pin_hash)`
+   function that seeds the 60 agents in 5 squads:
+   Alpha 15 (Lead Gen), Beta 15 (Delivery), Gamma 15 (Intelligence),
+   Delta 10 (Operations), Epsilon 5 (Innovation).
+
+### 2. Get a Groq API key
+
+<https://console.groq.com/keys> → create key (free tier).
+
+### 3. Environment variables (Vercel → Project → Settings → Environment Variables)
+
+| Variable                    | Where to get it                                        |
+| --------------------------- | ------------------------------------------------------ |
+| `SUPABASE_URL`              | Supabase → Project Settings → API → Project URL        |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → service_role key   |
+| `GROQ_API_KEY`              | Groq console                                           |
+| `JWT_SECRET`                | `openssl rand -hex 32`                                 |
+| `CRON_SECRET`               | `openssl rand -hex 32`                                 |
+
+> The service-role key bypasses RLS — it must **never** be exposed to the
+> browser. Only the `/api` functions use it. No `VITE_` prefix on any secret.
+
+### 4. Deploy
+
+```bash
+npm install
+vercel --prod   # or connect the GitHub repo to Vercel
+```
+
+Vercel Cron will call `/api/cron/squad-cycle` every 10 minutes
+(`*/10 * * * *`, see `vercel.json`). On the free Hobby plan, adjust the
+schedule to once daily if needed.
+
+## API
+
+| Route                 | Methods            | Description                                        |
+| --------------------- | ------------------ | -------------------------------------------------- |
+| `/api/auth/pin-login` | POST / GET / DELETE | PIN login (first login provisions workspace+agents), session check, logout |
+| `/api/feed`           | GET / POST / DELETE | Paginated activity feed, manual log, clear         |
+| `/api/finance`        | GET / POST / PATCH  | Monthly stats, transactions, invoices; paid → auto income |
+| `/api/studies`        | GET / POST          | Knowledge base; POST runs a Groq research study    |
+| `/api/agents/cycle`   | POST                | Run one squad cycle for your workspace             |
+| `/api/cron/squad-cycle` | GET               | Cron-guarded; runs the cycle for all workspaces    |
+
+Auth: JWT in an httpOnly `qimmah_session` cookie (`{ userId, workspaceId }`, 30d).
+
+## 4-week migration path (from localStorage to cloud)
+
+1. **Week 1 — Cloud sync button.** Add a "Sync to cloud" button in Settings that
+   POSTs the current localStorage state to `/api/feed` (and finance/studies).
+   Local data stays the source of truth; cloud is a backup.
+2. **Week 2 — Dual-write.** Every local mutation also writes to the API
+   (fire-and-forget with retry). Reads still come from localStorage.
+3. **Week 3 — Supabase as source of truth.** Reads switch to the API
+   (feed realtime via Supabase subscription on `feed_entries`); localStorage
+   becomes an offline cache.
+4. **Week 4 — Cron on.** Enable the Vercel Cron schedule; squads cycle
+   autonomously every 10 minutes. Remove dual-write code paths.
+
+## Cost — $0/month free tier
+
+| Service  | Free tier                                  | Fits?                       |
+| -------- | ------------------------------------------ | --------------------------- |
+| Vercel   | Hobby: serverless functions + cron (daily) | Yes (adjust cron if needed) |
+| Supabase | 500 MB Postgres, realtime, 2 GB bandwidth  | Yes                         |
+| Groq     | Free API tier with rate limits             | Yes (fallback chain helps)  |
