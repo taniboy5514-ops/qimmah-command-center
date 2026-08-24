@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/cron/squad-cycle", "schedule": "*/10 * * * *" }
+    { "path": "/api/cron/squad-cycle", "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/goal-processor", "schedule": "*/15 * * * *" }
   ],
   "headers": [
     {
