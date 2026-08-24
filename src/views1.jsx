@@ -3,6 +3,18 @@ import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, D
 import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { downloadFile } from "./views3.jsx";
+import { getFileSha, commitFiles } from "./github-sync.js";
+
+/* Self-edit intent — the user is asking to change the Command Center app
+   itself (not business work). Requires the GitHub connection in Integrations. */
+const SELF_EDIT_RE = /(command center|this app|the app itself|the dashboard|change the (app'?s? |site )?(title|heading|name|color|logo)|add a (card|button|tab|section)|update the (app|dashboard|interface|ui)|edit the (app|code|ui|site)|self[- ]?edit)/i;
+const SELF_EDIT_FILES = [
+  { path: "src/app.jsx", what: "App shell — navigation, layout, tab titles" },
+  { path: "src/shared.jsx", what: "Shared state, styles, AI engine, colors" },
+  { path: "src/views1.jsx", what: "AI CEO chat and Settings" },
+  { path: "src/views2.jsx", what: "Business views (tasks, finance, leads…)" },
+  { path: "src/views3.jsx", what: "Integrations Hub, results, live feed" },
+];
 /* ============================================================
    OPERATIONS RADAR — live view of what every agent is doing.
    Lit entirely by real data: tasks In Progress burn bright,
@@ -330,9 +342,90 @@ export function CEOChat({ S, up, log, user, go }) {
     } catch (e) { setSpeaking(false); }
   }
 
+  /* SELF-EDIT — change the Command Center itself via the GitHub connection.
+     Plans a small find/replace edit with the AI, applies it to the real files
+     and commits straight to the repo. Vercel redeploys automatically. */
+  async function selfEdit(text) {
+    setDraft(""); setError("");
+    const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "" };
+    up((s) => ({ ...s, chat: [...s.chat, userMsg].slice(-CHAT_CAP) }));
+    const gh = { owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...(S.github || {}) };
+    const postReply = (content, deliverable) => up((s) => ({
+      ...s,
+      chat: [...s.chat, { id: uid(), role: "assistant", content, deliverable: deliverable || null, ts: Date.now() }].slice(-CHAT_CAP),
+    }));
+    if (!gh.token) {
+      postReply("I can change the Command Center myself, but I need GitHub access first. Open the Integrations Hub → “GitHub — self-edit” card, paste a fine-grained token (Contents: Read and write on " + gh.repo + ") and tap Test connection. Then ask me again.");
+      return;
+    }
+    setBusy(true);
+    try {
+      /* Phase 1 — pick the files to touch. */
+      const pickSys = "You route self-edit requests for the Qimmah Command Center (Vite + React SPA). "
+        + "Reply ONLY with json like {\"files\":[\"src/views3.jsx\"]} — at most 3 paths chosen from this list:\n"
+        + SELF_EDIT_FILES.map((f) => "- " + f.path + " — " + f.what).join("\n");
+      const pickRaw = await aiCall(S, pickSys, [{ role: "user", content: "Change requested: " + text }]);
+      const pickFence = pickRaw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, pickRaw];
+      let pick = null;
+      try { pick = JSON.parse(pickFence[1]); } catch (e) { /* malformed */ }
+      const paths = (pick && Array.isArray(pick.files) ? pick.files : [])
+        .filter((p) => /^src\/[A-Za-z0-9._-]+\.jsx$/.test(String(p)))
+        .slice(0, 3);
+      if (!paths.length) throw new Error("I couldn't map that change to a file in the app. Be more specific (e.g. \"change the title in the AI CEO chat\").");
+
+      /* Phase 2 — fetch the real files and plan verbatim find/replace edits. */
+      const current = {};
+      for (const p of paths) current[p] = (await getFileSha(gh, p)).content;
+      const planSys = "You are the self-edit engine for the Qimmah Command Center (Vite 5 + React 18, inline styles, CYAN/PURPLE palette, lucide-react icons, no router). "
+        + "Apply the user's change to the current file contents below by replying ONLY with a fenced json block:\n"
+        + "```json\n{\"summary\":\"one-line summary\",\"files\":[{\"path\":\"src/x.jsx\",\"action\":\"update\",\"find\":\"snippet copied VERBATIM from the current file\",\"replace\":\"replacement snippet\"}]}\n```\n"
+        + "Rules: edits only (never delete or create files), at most 3 files, keep changes small and in the existing style, \"find\" must appear exactly once per file and verbatim in the content shown, never touch or output API keys/tokens.\n\nCURRENT FILES:\n"
+        + paths.map((p) => "=== " + p + " ===\n" + current[p]).join("\n\n");
+      const planRaw = await aiCall(S, planSys, [{ role: "user", content: "Change requested: " + text }]);
+      const planFence = planRaw.match(/```json\s*([\s\S]*?)```/) || planRaw.match(/```\s*(\{[\s\S]*?"files"[\s\S]*?\})\s*```/);
+      let plan = null;
+      if (planFence) { try { plan = JSON.parse(planFence[1]); } catch (e) { /* malformed */ } }
+      const edits = plan && Array.isArray(plan.files) ? plan.files.slice(0, 3) : [];
+      if (!edits.length) throw new Error("The AI couldn't produce a safe edit plan. Try describing the change a little differently.");
+      const summary = String(plan.summary || text).slice(0, 120);
+
+      /* Apply + validate. Never let the Groq/GitHub tokens anywhere near a commit. */
+      const secrets = [S.groqKey, gh.token].filter(Boolean);
+      const out = [];
+      for (const e of edits) {
+        const p = String(e.path || "");
+        if (!/^src\/[A-Za-z0-9._-]+\.jsx$/.test(p)) throw new Error("Blocked edit outside src/*.jsx: " + p);
+        if (e.action !== "update") throw new Error("Blocked non-update action on " + p + " (edits only, no deletions).");
+        if (!(p in current)) current[p] = (await getFileSha(gh, p)).content;
+        const find = String(e.find || ""), replace = String(e.replace || "");
+        if (!find) throw new Error("Empty find snippet for " + p + ".");
+        if (current[p].indexOf(find) === -1) throw new Error("The find snippet wasn't found in " + p + " — the app may have changed. Ask me to try again.");
+        const next = current[p].replace(find, replace);
+        if (secrets.some((k) => next.includes(k))) throw new Error("Blocked: the edit would include a secret token. Refusing to commit.");
+        current[p] = next;
+        out.push({ path: p, content: next });
+      }
+
+      await commitFiles(gh, "AI CEO self-edit: " + summary, out);
+      const note = "✅ Committed to " + gh.owner + "/" + gh.repo + " (" + (gh.branch || "main") + "): " + summary + "\nFiles: " + out.map((f) => f.path).join(", ") + "\nVercel redeploys in ~2 min.";
+      postReply(note, {
+        id: uid(), title: "Command Center self-edit", filename: "self-edit-summary.md",
+        content: "# AI CEO self-edit\n\n" + note + "\n\n## Replacements\n" + edits.map((e) => "### " + e.path + "\nFIND:\n" + e.find + "\n\nREPLACE:\n" + e.replace).join("\n\n"),
+      });
+      up((s) => ({ ...s, chat: [...s.chat, fleetChatMsg("GitHub Sync", "🔧 AI CEO self-edit committed: " + summary + " → " + out.map((f) => f.path).join(", ") + ". Vercel redeploys in ~2 min.")].slice(-CHAT_CAP) }));
+      log("system", "AI CEO self-edit committed: " + summary + " (" + out.map((f) => f.path).join(", ") + ")");
+    } catch (e) {
+      postReply("Self-edit failed: " + (e && e.message ? e.message : "unknown error") + "\nNothing was committed.");
+      log("system", "AI CEO self-edit failed: " + (e && e.message ? e.message : "unknown error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send(textArg) {
     const text = (textArg || draft).trim();
     if (!text || busy) return;
+    if (SELF_EDIT_RE.test(text)) { await selfEdit(text); return; }
     setDraft(""); setError("");
     const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "" };
     up((s) => ({ ...s, chat: [...s.chat, userMsg].slice(-CHAT_CAP) }));
