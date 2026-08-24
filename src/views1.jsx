@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio, Target, X } from "lucide-react";
+import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio, Target, X, Plus, Camera, Image, FileUp, Link2, Plug, Flag, ChevronRight } from "lucide-react";
 import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, wantsGoal, SKILL_CATALOG, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { downloadFile } from "./views3.jsx";
@@ -532,6 +532,15 @@ export function CEOChat({ S, up, log, user, go }) {
   const [copied, setCopied] = useState("");
   const [showSkills, setShowSkills] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState(""); // engine that last spoke: ElevenLabs | Neural (free) | Browser voice
+  /* "+" connectors menu (Kimi-style) — attachments, links, plugins, skills, goals */
+  const [showPlus, setShowPlus] = useState(false);
+  const [showLink, setShowLink] = useState(false);
+  const [linkDraft, setLinkDraft] = useState("");
+  const [attachments, setAttachments] = useState([]);
+  const camRef = useRef(null);
+  const photoRef = useRef(null);
+  const filePickRef = useRef(null);
+  const inputRef = useRef(null);
   const scrollRef = useRef(null);
   const recRef = useRef(null);
   const audioRef = useRef(null);
@@ -697,12 +706,69 @@ export function CEOChat({ S, up, log, user, go }) {
     }
   }
 
+  /* ---------- Attachments ("+" menu) ---------- */
+  const ATTACH_TEXT_EXT = ["txt", "md", "csv", "json", "js", "jsx", "html", "css", "xml", "log"];
+  const ATTACH_MAX_FILES = 5;
+  const ATTACH_MAX_BYTES = 2 * 1024 * 1024;
+  const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : (n || 0) + " B");
+
+  function addFiles(list) {
+    const files = Array.from(list || []);
+    if (!files.length) return;
+    setError("");
+    const room = ATTACH_MAX_FILES - attachments.length;
+    if (room <= 0) { setError("You can attach up to " + ATTACH_MAX_FILES + " files at a time. Remove one first."); return; }
+    files.slice(0, room).forEach((f) => {
+      if (f.size > ATTACH_MAX_BYTES) { setError('"' + f.name + '" is over 2MB — attach smaller files.'); return; }
+      const ext = (String(f.name).split(".").pop() || "").toLowerCase();
+      const isImage = f.type && f.type.startsWith("image/");
+      const isText = ATTACH_TEXT_EXT.includes(ext) || (f.type && f.type.startsWith("text/") && f.size < 200 * 1024);
+      if (isImage || isText) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setAttachments((cur) => {
+            if (cur.length >= ATTACH_MAX_FILES) return cur;
+            if (isImage) return [...cur, { name: f.name, size: f.size, type: f.type || "image", dataUrl: String(reader.result || "") }];
+            return [...cur, { name: f.name, size: f.size, type: f.type || "text/plain", text: String(reader.result || "") }];
+          });
+        };
+        try { if (isImage) reader.readAsDataURL(f); else reader.readAsText(f); } catch (e) { /* file unreadable — skip */ }
+      } else {
+        setAttachments((cur) => (cur.length >= ATTACH_MAX_FILES ? cur : [...cur, { name: f.name, size: f.size, type: f.type || "file" }]));
+      }
+    });
+    if (files.length > room) setError("Only the first " + room + " file(s) were attached — the cap is " + ATTACH_MAX_FILES + ".");
+  }
+
+  function attachLink() {
+    const u = linkDraft.trim();
+    if (!u) return;
+    if (attachments.length >= ATTACH_MAX_FILES) { setError("You can attach up to " + ATTACH_MAX_FILES + " attachments at a time."); return; }
+    const url = /^https?:\/\//i.test(u) ? u : "https://" + u;
+    let name = url;
+    try { name = new URL(url).hostname; } catch (e) { /* keep the raw text as the name */ }
+    setAttachments((cur) => (cur.length >= ATTACH_MAX_FILES ? cur : [...cur, { name, size: 0, type: "link", url, text: "Link shared by the user: " + url }]));
+    setLinkDraft(""); setShowLink(false); setShowPlus(false);
+  }
+
   async function send(textArg) {
-    const text = (textArg || draft).trim();
+    const atts = attachments;
+    let text = (textArg || draft).trim();
+    if (atts.length) {
+      const block = "\n\n📎 Attachments:\n" + atts.map((a) => {
+        const line = "- " + a.name + (a.type === "link" ? " (link)" : " (" + fmtSize(a.size) + ")");
+        if (a.dataUrl) return line + "\n[image attached: " + a.name + " — the CEO cannot see image contents yet, describe what you need]";
+        if (a.text != null) return line + "\n```\n" + String(a.text).slice(0, 4000) + "\n```";
+        return line;
+      }).join("\n");
+      text = (text || "Please review the attached file(s).") + block;
+      setAttachments([]);
+      setShowLink(false); setLinkDraft("");
+    }
     if (!text || busy) return;
     if (SELF_EDIT_RE.test(text)) { await selfEdit(text); return; }
     setDraft(""); setError("");
-    const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "" };
+    const userMsg = { id: uid(), role: "user", content: text, ts: Date.now(), by: user ? user.name : "", ...(atts.length ? { attachments: atts.map((a) => ({ name: a.name, size: a.size, type: a.type })) } : {}) };
     up((s) => ({ ...s, chat: [...s.chat, userMsg].slice(-CHAT_CAP) }));
     setBusy(true);
     try {
@@ -980,6 +1046,15 @@ export function CEOChat({ S, up, log, user, go }) {
               }}>
                 {m.content}
               </div>
+              {m.role === "user" && m.attachments && m.attachments.length > 0 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6, justifyContent: "flex-end" }}>
+                  {m.attachments.map((a, i) => (
+                    <span key={i} style={{ fontSize: 10.5, color: "#C4B5FD", background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.35)", borderRadius: 20, padding: "2px 9px", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                      {a.type === "link" ? <Link2 size={10} /> : <FileUp size={10} />} {a.name}{a.size ? " · " + fmtSize(a.size) : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
               {m.role === "assistant" && m.deliverable && (
                 <div style={{ marginTop: 6, padding: 12, borderRadius: 10, background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.35)" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#22D3EE", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
@@ -1055,8 +1130,83 @@ export function CEOChat({ S, up, log, user, go }) {
           </div>
         )}
 
+        {/* Attachment chips — shown above the input row */}
+        {attachments.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+            {attachments.map((a, i) => (
+              <span key={a.name + ":" + i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#E9E4FB", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 20, padding: "4px 8px" }}>
+                {a.dataUrl
+                  ? <img src={a.dataUrl} alt="" style={{ width: 20, height: 20, borderRadius: 5, objectFit: "cover" }} />
+                  : a.type === "link"
+                    ? <Link2 size={12} style={{ color: CYAN, flexShrink: 0 }} />
+                    : <FileUp size={12} style={{ color: CYAN, flexShrink: 0 }} />}
+                <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                <span style={{ color: "#8B86A3", fontSize: 10.5 }}>{a.type === "link" ? "link" : fmtSize(a.size)}</span>
+                <button onClick={() => setAttachments((cur) => cur.filter((_, x) => x !== i))} title="Remove"
+                  style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}><X size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Composer */}
-        <div style={{ display: "flex", gap: 10, padding: 14, borderTop: "1px solid rgba(255,255,255,0.07)", alignItems: "center", position: "relative" }}>
+        <div style={{ display: "flex", gap: 10, padding: 14, borderTop: attachments.length ? "none" : "1px solid rgba(255,255,255,0.07)", alignItems: "center", position: "relative" }}>
+          {/* Hidden file pickers for the "+" menu */}
+          <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          <input ref={filePickRef} type="file" multiple style={{ display: "none" }}
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          {/* "+" connectors sheet (Kimi-style) */}
+          {showPlus && (
+            <div>
+              <div onClick={() => { setShowPlus(false); setShowLink(false); }} style={{ position: "fixed", inset: 0, zIndex: 15 }} />
+              <div style={{ position: "absolute", bottom: 76, left: 14, zIndex: 20, width: 320, maxWidth: "calc(100vw - 40px)", ...glass, background: "rgba(15,10,26,0.96)", padding: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 10 }}>
+                  {[
+                    { icon: Camera, label: "Camera", fn: () => { setShowPlus(false); if (camRef.current) camRef.current.click(); } },
+                    { icon: Image, label: "Photos", fn: () => { setShowPlus(false); if (photoRef.current) photoRef.current.click(); } },
+                    { icon: FileUp, label: "Local file", fn: () => { setShowPlus(false); if (filePickRef.current) filePickRef.current.click(); } },
+                    { icon: Link2, label: "Paste link", fn: () => setShowLink(!showLink) },
+                  ].map((t) => (
+                    <button key={t.label} onClick={t.fn}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", borderRadius: 12, background: "rgba(255,255,255,0.05)", border: "1px solid " + (t.label === "Paste link" && showLink ? "rgba(6,182,212,0.45)" : "rgba(255,255,255,0.1)"), cursor: "pointer", fontFamily: "inherit", fontSize: 11, color: "#E9E4FB" }}>
+                      <t.icon size={18} style={{ color: CYAN }} />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {showLink && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    <input style={{ ...inputStyle, padding: "8px 10px", fontSize: 12.5 }} placeholder="https://…" value={linkDraft} autoFocus
+                      onChange={(e) => setLinkDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") attachLink(); }} />
+                    <button style={{ ...btnPrimary, padding: "8px 12px", fontSize: 12.5 }} onClick={attachLink}>Attach</button>
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {[
+                    { icon: Plug, title: "Plugins", sub: "Open the Integrations Hub and connect apps", fn: () => { setShowPlus(false); setShowLink(false); if (go) go("integrations"); } },
+                    { icon: Target, title: "Skills", sub: "Reuse a playbook to handle tasks reliably", fn: () => { setShowPlus(false); setShowLink(false); setShowSkills(true); } },
+                    { icon: Flag, title: "Goal", sub: "Set a goal — the CEO keeps working until it's done", fn: () => { setShowPlus(false); setShowLink(false); setDraft("Goal: "); if (inputRef.current) inputRef.current.focus(); } },
+                  ].map((r) => (
+                    <button key={r.title} onClick={r.fn}
+                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", borderRadius: 10, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 9, background: "rgba(124,58,237,0.15)", border: "1px solid rgba(124,58,237,0.35)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <r.icon size={14} style={{ color: "#A78BFA" }} />
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#E9E4FB" }}>{r.title}</span>
+                        <span style={{ display: "block", fontSize: 11, color: "#8B86A3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sub}</span>
+                      </span>
+                      <ChevronRight size={14} style={{ color: "#6B6685", flexShrink: 0 }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {showSkills && (
             <div style={{ position: "absolute", bottom: 76, left: 14, right: 14, zIndex: 20, ...glass, background: "rgba(15,10,26,0.96)", padding: 12, maxHeight: 300, overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1078,6 +1228,15 @@ export function CEOChat({ S, up, log, user, go }) {
               </div>
             </div>
           )}
+          <button onClick={() => { if (busy) return; setShowPlus(!showPlus); setShowLink(false); setShowSkills(false); }} disabled={busy}
+            title="Attach files, links, plugins, skills and goals"
+            style={{
+              ...btnGhost, padding: 0, width: 44, height: 44, borderRadius: "50%", flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center", cursor: busy ? "not-allowed" : "pointer",
+              ...(showPlus ? { color: CYAN, borderColor: "rgba(6,182,212,0.45)" } : {}),
+            }}>
+            <Plus size={19} />
+          </button>
           <button onClick={toggleMic} title={listening ? "Stop listening" : "Speak to your AI CEO"}
             style={{
               width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0,
@@ -1093,12 +1252,13 @@ export function CEOChat({ S, up, log, user, go }) {
               : <Mic size={22} color="#fff" />}
           </button>
           <input
+            ref={inputRef}
             style={{ ...inputStyle, flex: 1 }} placeholder={listening ? "Listening…" : "Ask your AI CEO anything…"}
             value={draft} onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") send(); }}
           />
           <button style={{ ...btnGhost, padding: "12px 14px", ...(showSkills ? { color: CYAN, borderColor: "rgba(6,182,212,0.45)" } : {}) }}
-            title="Skills Registry — 8 goal playbooks" onClick={() => setShowSkills(!showSkills)}>
+            title="Skills Registry — 8 goal playbooks" onClick={() => { setShowSkills(!showSkills); setShowPlus(false); setShowLink(false); }}>
             <Target size={16} />
           </button>
           <button style={{ ...btnPrimary, padding: "12px 16px" }} onClick={() => send()} disabled={busy}>
