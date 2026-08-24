@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText, Github, Video, ShieldCheck } from "lucide-react";
-import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls } from "./shared.jsx";
+import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls, TOOL_CATALOG, MCP_LIMITS_NOTE } from "./shared.jsx";
 import { testGhConnection } from "./github-sync.js";
 import { resultMarkdown } from "./autopilot.jsx";
 /* ============================================================
@@ -828,6 +828,51 @@ function VaultInput({ label, value, onChange, placeholder, type }) {
   );
 }
 
+/* ============================================================
+   MCP DISCOVERY — external access panel for the tool system.
+   Shows the /api/mcp/discover endpoint, a copy button, and a
+   readable catalog of the 13 tools (mirror of the registry).
+   ============================================================ */
+export function McpDiscoveryPanel() {
+  const [copied, setCopied] = useState(false);
+  const url = (typeof window !== "undefined" ? window.location.origin : "") + "/api/mcp/discover";
+  async function copyUrl() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) { /* clipboard unavailable */ }
+  }
+  return (
+    <Card style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: CYAN, fontWeight: 600, marginBottom: 8 }}>External Access · MCP</div>
+      <p style={{ fontSize: 12.5, color: "#A5A0B8", lineHeight: 1.6, margin: "0 0 12px" }}>
+        External MCP clients can discover the agent tool system at this endpoint. Public callers see tool names and
+        descriptions; full JSON schemas require the <code style={{ color: CYAN }}>MCP_API_KEY</code> header (<code style={{ color: CYAN }}>x-api-key</code>). Executing tools still requires a signed-in session.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <code style={{ ...inputStyle, flex: 1, minWidth: 220, display: "flex", alignItems: "center", fontSize: 12, overflowX: "auto" }}>{url}</code>
+        <button style={btnPrimary} onClick={copyUrl}><Copy size={13} /> {copied ? "Copied" : "Copy"}</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8, marginBottom: 12 }}>
+        {TOOL_CATALOG.map((t) => (
+          <div key={t.name} style={{ ...glass, padding: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: t.approval ? "#FBBF24" : "#34D399" }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#E9E4FB", fontFamily: "monospace" }}>{t.name}</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "#8B86A3", lineHeight: 1.5 }}>{t.desc}</div>
+            <div style={{ fontSize: 10.5, color: "#6B6685", marginTop: 4 }}>{t.squads.join(" · ")}{t.approval ? " · approval required" : ""}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11.5, color: "#FDE68A", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 10, padding: "10px 12px", lineHeight: 1.6 }}>
+        {MCP_LIMITS_NOTE}
+      </div>
+    </Card>
+  );
+}
+
 export function Integrations({ S, up, log }) {
   const [wa, setWa] = useState({ phone: "", msg: "" });
   const [em, setEm] = useState({ to: "", subject: "", body: "" });
@@ -895,6 +940,8 @@ export function Integrations({ S, up, log }) {
   return (
     <div>
       <SectionTitle eyebrow="Channels" title="Integrations Hub" sub="Every button here does something real. Where official APIs are required, the card says so plainly — no fake 'connected' badges." />
+
+      <McpDiscoveryPanel />
 
       {/* Security banner — replaces the old "email us your API keys" idea. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, marginBottom: 18, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 13, color: "#FDE68A" }}>
