@@ -71,6 +71,34 @@ schedule to once daily if needed.
 | `/api/mcp/discover`   | GET                 | MCP discovery — public tool list, full schemas with `x-api-key` |
 | `/api/mcp/approve`    | GET / POST          | List pending approvals; approve/reject (approved tools execute immediately) |
 
+## Text-to-speech — free neural voices (`/api/tts`)
+
+`POST /api/tts` with `{ text, voice?, rate? }` returns `audio/mpeg` (MP3 binary).
+Powered by `node-edge-tts` — Microsoft Edge neural voices, **completely free,
+no API key**. Text is capped at 2000 chars; `rate` is a 0.5–2.0 speed
+multiplier (mapped to an Edge `±%` string).
+
+Offered female voices (allowlisted server-side):
+
+| Preset           | Edge voice             | Style          |
+| ---------------- | ---------------------- | -------------- |
+| Aria (default)   | `en-US-AriaNeural`     | warm, natural  |
+| Jenny            | `en-US-JennyNeural`    | friendly       |
+| Michelle         | `en-US-MichelleNeural` | clear          |
+| Sonia            | `en-GB-SoniaNeural`    | British        |
+| Zariyah (Arabic) | `ar-SA-ZariyahNeural`  | Arabic female  |
+
+Optional shared secret: set `TTS_KEY` in the environment to require the same
+value in the `x-tts-key` header; when unset the endpoint is open.
+
+Frontend voice chain (AI CEO chat): **ElevenLabs** (if a key is saved) →
+**free Edge neural voice** (this endpoint) → **browser SpeechSynthesis**
+fallback. Failures degrade gracefully to the next engine.
+
+> Honest caveat: this is an **unofficial free Microsoft Edge service** — it
+> could change, be rate-limited or stop working at any time. That's exactly
+> why the browser-voice fallback stays in the chain.
+
 ## MCP tool system
 
 13 MCP-compatible tools in `backend/lib/mcp/registry.js` (messaging, CRM,

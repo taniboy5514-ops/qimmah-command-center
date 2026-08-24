@@ -78,6 +78,7 @@ export const VOICE_IDS = {
 
 export const DEFAULT_STATE = {
   groqKey: "", groqModel: "", elKey: "", elVoice: "Rachel", rate: 1, autoSpeak: true,
+  edgeVoice: "Aria", // Free neural voice (no key) — see EDGE_VOICES in views1.jsx
   agentsOff: {}, tasks: [], transactions: [], invoices: [], accounts: [],
   chat: [], insights: [], feed: [], opportunities: [], users: [], contracts: [],
   autopilot: { auto: true, last: null, lastCycleAt: null, cycleCount: 0, nextTopicIdx: 0 },
