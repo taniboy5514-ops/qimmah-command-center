@@ -16,6 +16,74 @@ const SELF_EDIT_FILES = [
   { path: "src/views3.jsx", what: "Integrations Hub, results, live feed" },
 ];
 /* ============================================================
+   PENDING APPROVALS — MCP approval queue. Polls /api/mcp/approve
+   (GET) and renders Approve/Reject. Degrades gracefully: when the
+   backend is not configured the card stays completely hidden.
+   ============================================================ */
+export function PendingApprovals({ log }) {
+  const [approvals, setApprovals] = useState(null); // null = backend not detected
+  const [busyId, setBusyId] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const res = await fetch("/api/mcp/approve");
+        if (!alive) return;
+        if (res.ok) {
+          const json = await res.json();
+          setApprovals(json.approvals || []);
+        } // 401/404/500 → backend not live for this session; stay hidden
+      } catch (e) { /* backend not configured — stay hidden */ }
+    }
+    poll();
+    const t = setInterval(poll, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (!approvals || approvals.length === 0) return null;
+
+  async function decide(id, decision) {
+    setBusyId(id);
+    try {
+      const res = await fetch("/api/mcp/approve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalId: id, decision }),
+      });
+      if (res.ok) {
+        setApprovals((list) => (list || []).filter((a) => a.id !== id));
+        log && log("approval", "Tool approval " + decision + "d");
+      }
+    } catch (e) { /* leave the row in place */ }
+    setBusyId("");
+  }
+
+  return (
+    <Card style={{ marginBottom: 16, borderColor: "rgba(251,191,36,0.35)" }}>
+      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: "#FBBF24", fontWeight: 600, marginBottom: 10 }}>
+        Pending approvals · {approvals.length}
+      </div>
+      {approvals.map((a) => (
+        <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#E9E4FB" }}>{a.tool_name}</div>
+            <div style={{ fontSize: 11, color: "#8B86A3" }}>{timeAgo(new Date(a.created_at).getTime())} · agent {String(a.agent_id).slice(0, 8)}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button style={{ ...btnPrimary, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+              <Check size={13} /> Approve
+            </button>
+            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
+              Reject
+            </button>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+/* ============================================================
    OPERATIONS RADAR — live view of what every agent is doing.
    Lit entirely by real data: tasks In Progress burn bright,
    Review and Backlog glow softer, idle agents stay dim.
@@ -572,6 +640,7 @@ export function CEOChat({ S, up, log, user, go }) {
     <div>
       <OpsRadar S={S} busy={busy} />
       <AutopilotPanel S={S} up={up} log={log} user={user} />
+      <PendingApprovals log={log} />
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "stretch" }}>
       <div style={{ flex: "1 1 460px", minWidth: 300, display: "flex", flexDirection: "column", ...glass, overflow: "hidden" }}>
         {/* Chat header */}
