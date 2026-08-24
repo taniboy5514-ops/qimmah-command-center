@@ -259,6 +259,8 @@ export function GoalOffer({ prompt, log }) {
    OPERATIONS RADAR — live view of what every agent is doing.
    Lit entirely by real data: tasks In Progress burn bright,
    Review and Backlog glow softer, idle agents stay dim.
+   v2 — sweep beam, neural substrate, packet links, HUD readouts.
+   All motion is pure CSS/SMIL: zero React state per frame.
    ============================================================ */
 const RADAR_STATES = {
   working: { color: "#FFB020", label: "Working now" },
@@ -268,10 +270,52 @@ const RADAR_STATES = {
   off:     { color: "#2C2840", label: "Offline" },
 };
 
+/* Radar keyframes — component-local so views1.jsx stays self-contained.
+   prefers-reduced-motion freezes every radar animation class below; the
+   sweep beam and the SMIL packets are additionally not rendered at all
+   (see the `reduced` flag), so states read statically. */
+const RADAR_CSS = `
+@keyframes qRadarSpin { to { transform: rotate(360deg); } }
+@keyframes qRadarFlare { 0% { transform: scale(1.55); opacity: 1; } 42% { transform: scale(1); opacity: 0.95; } 100% { transform: scale(1); opacity: 0.95; } }
+@keyframes qRadarFlareHalo { 0% { transform: scale(1.45); opacity: 0.5; } 42% { transform: scale(1); opacity: 0.16; } 100% { transform: scale(1); opacity: 0.16; } }
+@keyframes qRadarBreathe { 0%,100% { opacity: 0.34; } 50% { opacity: 0.62; } }
+@keyframes qRadarFlow { to { stroke-dashoffset: -64; } }
+@keyframes qRadarWave { 0% { transform: scale(0.25); opacity: 0.55; } 100% { transform: scale(1); opacity: 0; } }
+@keyframes qRadarCorePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.q-radar-sweep { transform-origin: 300px 178px; animation-name: qRadarSpin; animation-timing-function: linear; animation-iteration-count: infinite; }
+.q-radar-flare { transform-box: fill-box; transform-origin: center; animation-name: qRadarFlare; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+.q-radar-flare-halo { transform-box: fill-box; transform-origin: center; animation-name: qRadarFlareHalo; animation-timing-function: ease-out; animation-iteration-count: infinite; }
+.q-radar-breathe { animation-name: qRadarBreathe; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.q-radar-flow { animation: qRadarFlow 1.4s linear infinite; }
+.q-radar-wave { transform-box: fill-box; transform-origin: center; animation: qRadarWave 3.3s ease-out infinite; }
+.q-radar-corepulse { animation: qRadarCorePulse 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .q-radar-sweep, .q-radar-flare, .q-radar-flare-halo, .q-radar-breathe, .q-radar-flow, .q-radar-wave, .q-radar-corepulse { animation: none !important; }
+}
+`;
+
 export function OpsRadar({ S, busy }) {
   const [open, setOpen] = useState(true);
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    try {
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const update = () => setReduced(!!mq.matches);
+      update();
+      if (mq.addEventListener) mq.addEventListener("change", update);
+      else if (mq.addListener) mq.addListener(update);
+      return () => {
+        if (mq.removeEventListener) mq.removeEventListener("change", update);
+        else if (mq.removeListener) mq.removeListener(update);
+      };
+    } catch (e) { return undefined; }
+  }, []);
+
   const cx = 300, cy = 178;
   const radii = { Alpha: 62, Beta: 88, Gamma: 114, Delta: 138, Epsilon: 158 };
+  const R_OUT = 170;   // sweep reach / face edge
+  const R_BEZEL = 172; // azimuth tick ring
+  const monoFont = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
   const taskFor = (id, col) => S.tasks.find((t) => t.agentId === id && t.col === col);
   const stateOf = (id) => {
@@ -299,6 +343,56 @@ export function OpsRadar({ S, busy }) {
   const workingNodes = nodes.filter((n) => n.state === "working");
   const counts = nodes.reduce((acc, n) => { acc[n.state] = (acc[n.state] || 0) + 1; return acc; }, {});
 
+  const anyWorking = workingNodes.length > 0;
+  const period = anyWorking ? 2.4 : 6; // sweep seconds per revolution
+
+  /* Bearing in degrees (0 = 3 o'clock, clockwise — matching atan2 in SVG's
+     y-down space). The sweep rotates clockwise, so the beam reaches bearing
+     b at fraction b/360 of each revolution: the flare delay below makes each
+     working blip flash exactly as the beam passes it. */
+  const bearingOf = (n) => (Math.atan2(n.y - cy, n.x - cx) * 180 / Math.PI + 360) % 360;
+
+  /* Neural substrate — faint links from each standing-by/offline node to its
+     1–2 nearest standing-by neighbors. Static geometry per render; one shared
+     blur filter on the whole group (never per node — 60 per-node filters
+     would kill the framerate). */
+  const idleNodes = nodes.filter((n) => n.state === "idle" || n.state === "off");
+  const substrate = [];
+  const seenPairs = {};
+  idleNodes.forEach((n, i) => {
+    idleNodes
+      .filter((m, j) => j !== i)
+      .map((m) => ({ m, d: (m.x - n.x) * (m.x - n.x) + (m.y - n.y) * (m.y - n.y) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2)
+      .forEach(({ m }) => {
+        const key = n.agent.id < m.agent.id ? n.agent.id + "-" + m.agent.id : m.agent.id + "-" + n.agent.id;
+        if (seenPairs[key]) return;
+        seenPairs[key] = true;
+        substrate.push({ key, x1: n.x, y1: n.y, x2: m.x, y2: m.y });
+      });
+  });
+
+  /* Bezel — 72 azimuth ticks (one per 5°), longer every 30°. */
+  const ticks = [];
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const long = i % 6 === 0;
+    const r1 = long ? 160 : 166;
+    ticks.push({
+      key: i, long,
+      x1: Math.round((cx + Math.cos(a) * r1) * 10) / 10,
+      y1: Math.round((cy + Math.sin(a) * r1) * 10) / 10,
+      x2: Math.round((cx + Math.cos(a) * R_BEZEL) * 10) / 10,
+      y2: Math.round((cy + Math.sin(a) * R_BEZEL) * 10) / 10,
+    });
+  }
+
+  /* Sweep wedge: a 45° trailing sector filled along its chord, so the alpha
+     ramps from transparent (trail) to violet (leading edge, due east). */
+  const sweepPath = "M " + cx + " " + cy + " L 420.2 57.8 A " + R_OUT + " " + R_OUT + " 0 0 1 " + (cx + R_OUT) + " " + cy + " Z";
+  const diag = Math.round(R_OUT * Math.SQRT1_2 * 10) / 10; // 120.2 — 45° crosshair extent
+
   return (
     <Card glow style={{ marginBottom: 16, padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: open ? "1px solid rgba(255,255,255,0.07)" : "none", flexWrap: "wrap", gap: 8 }}>
@@ -315,7 +409,8 @@ export function OpsRadar({ S, busy }) {
       </div>
       {open && (
         <div>
-          <svg viewBox="0 0 600 356" style={{ width: "100%", height: "auto", display: "block", background: "radial-gradient(circle at 50% 50%, rgba(124,58,237,0.10), transparent 65%)" }}>
+          <style>{RADAR_CSS}</style>
+          <svg viewBox="0 0 600 356" style={{ width: "100%", height: "auto", display: "block", background: "radial-gradient(circle at 50% 50%, #17102e 0%, #0a0618 80%)" }} role="img" aria-label="Operations radar — live agent activity">
             <defs>
               <radialGradient id="coreGlow">
                 <stop offset="0%" stopColor="#FFB020" stopOpacity="0.9" />
@@ -326,50 +421,141 @@ export function OpsRadar({ S, busy }) {
                 <stop offset="0%" stopColor="#7C3AED" stopOpacity="0.1" />
                 <stop offset="100%" stopColor="#FFB020" stopOpacity="0.8" />
               </linearGradient>
+              <linearGradient id="qSweepGrad" gradientUnits="userSpaceOnUse" x1="420.2" y1="57.8" x2={cx + R_OUT} y2={cy}>
+                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0" />
+                <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.35" />
+              </linearGradient>
+              <radialGradient id="qVignette">
+                <stop offset="0%" stopColor="#0a0618" stopOpacity="0" />
+                <stop offset="72%" stopColor="#0a0618" stopOpacity="0" />
+                <stop offset="100%" stopColor="#0a0618" stopOpacity="0.55" />
+              </radialGradient>
+              <filter id="qSubBlur" x="-5%" y="-5%" width="110%" height="110%">
+                <feGaussianBlur stdDeviation="0.7" />
+              </filter>
             </defs>
 
-            <g opacity="0.35">
-              <circle cx={cx} cy={cy} r="170" fill="none" stroke="#7C3AED" strokeWidth="0.7" strokeDasharray="2 10">
-                <animateTransform attributeName="transform" type="rotate" from={"0 " + cx + " " + cy} to={"360 " + cx + " " + cy} dur="80s" repeatCount="indefinite" />
-              </circle>
-              <circle cx={cx} cy={cy} r="126" fill="none" stroke="#06B6D4" strokeWidth="0.6" strokeDasharray="14 22">
-                <animateTransform attributeName="transform" type="rotate" from={"360 " + cx + " " + cy} to={"0 " + cx + " " + cy} dur="110s" repeatCount="indefinite" />
-              </circle>
+            {/* 1 · FACE — inner vignette + faint corner HUD brackets */}
+            <rect x="0" y="0" width="600" height="356" fill="url(#qVignette)" />
+            <g fill="none" stroke="rgba(139,92,246,0.38)" strokeWidth="1.2">
+              <path d="M14 28 V14 H28" />
+              <path d="M572 14 H586 V28" />
+              <path d="M586 328 V342 H572" />
+              <path d="M28 342 H14 V328" />
+            </g>
+
+            {/* 2 · GRID — crosshair, squad rings, azimuth bezel + degree labels */}
+            <g stroke="#A78BFA" strokeWidth="0.6">
+              <line x1={cx - R_OUT} y1={cy} x2={cx + R_OUT} y2={cy} strokeOpacity="0.06" />
+              <line x1={cx} y1={cy - R_OUT} x2={cx} y2={cy + R_OUT} strokeOpacity="0.06" />
+              <line x1={cx - diag} y1={cy - diag} x2={cx + diag} y2={cy + diag} strokeOpacity="0.035" />
+              <line x1={cx - diag} y1={cy + diag} x2={cx + diag} y2={cy - diag} strokeOpacity="0.035" />
             </g>
             {Object.entries(radii).map(([sq, r]) => (
-              <circle key={sq} cx={cx} cy={cy} r={r} fill="none" stroke={SQUAD_META[sq].color} strokeOpacity="0.13" strokeWidth="1" />
+              <circle key={sq} cx={cx} cy={cy} r={r} fill="none" stroke={SQUAD_META[sq].color} strokeOpacity="0.14" strokeWidth="1" />
             ))}
-
-            {workingNodes.map((n) => (
-              <line key={"l" + n.agent.id} x1={cx} y1={cy} x2={n.x} y2={n.y} stroke="url(#linkGrad)" strokeWidth="1.1">
-                <animate attributeName="stroke-opacity" values="0.35;1;0.35" dur="2.4s" repeatCount="indefinite" />
-              </line>
+            <circle cx={cx} cy={cy} r={R_BEZEL} fill="none" stroke="#A78BFA" strokeOpacity="0.2" strokeWidth="0.8" />
+            {ticks.map((t) => (
+              <line key={t.key} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="#A78BFA" strokeOpacity={t.long ? 0.42 : 0.18} strokeWidth={t.long ? 1 : 0.6} />
             ))}
+            {[["000", 0], ["090", 90], ["180", 180], ["270", 270]].map(([t, deg]) => {
+              const a = (deg * Math.PI) / 180;
+              return (
+                <text key={t} x={Math.round((cx + Math.cos(a) * 149) * 10) / 10} y={Math.round((cy + Math.sin(a) * 149) * 10) / 10 + 2.5}
+                  textAnchor="middle" fontSize="7" fill="rgba(196,181,253,0.45)" fontFamily={monoFont} letterSpacing="1">{t}</text>
+              );
+            })}
 
-            <circle cx={cx} cy={cy} r="34" fill="url(#coreGlow)">
-              {busy && <animate attributeName="r" values="30;40;30" dur="1.2s" repeatCount="indefinite" />}
-            </circle>
-            <circle cx={cx} cy={cy} r="13" fill="#0B0713" stroke="#FFB020" strokeWidth="1.4" />
-            <circle cx={cx} cy={cy} r="5" fill="#FFB020">
-              <animate attributeName="opacity" values="1;0.4;1" dur={busy ? "0.7s" : "2.6s"} repeatCount="indefinite" />
-            </circle>
-            <text x={cx} y={cy + 30} textAnchor="middle" fontSize="9.5" fill="#C4B5FD" letterSpacing="2" fontFamily="'Space Grotesk', sans-serif">{busy ? "CEO THINKING" : "CEO CORE"}</text>
+            {/* 3 · NEURAL SUBSTRATE — standing-by mesh, one shared blur on the group */}
+            <g filter="url(#qSubBlur)">
+              {substrate.map((l) => (
+                <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="rgba(96,165,250,0.13)" strokeWidth="0.7" />
+              ))}
+            </g>
 
+            {/* 4 · LINKS TO CORE — dashed base + flowing bright segment + packet dots */}
+            {workingNodes.map((n, li) => {
+              const pathD = "M " + n.x + " " + n.y + " L " + cx + " " + cy;
+              return (
+                <g key={"l" + n.agent.id}>
+                  <line x1={cx} y1={cy} x2={n.x} y2={n.y} stroke="url(#linkGrad)" strokeWidth="1" strokeDasharray="3 5" strokeOpacity="0.5" />
+                  <line className="q-radar-flow" x1={n.x} y1={n.y} x2={cx} y2={cy} stroke="rgba(255,210,122,0.85)" strokeWidth="1.3" strokeDasharray="8 56" strokeLinecap="round" />
+                  {!reduced && [0, 1].map((k) => {
+                    const dur = 1.5 + ((n.agent.id + k) % 3) * 0.55; // 1.5–2.6s
+                    const begin = (li * 0.4 + k * 0.9).toFixed(2) + "s";
+                    return (
+                      <circle key={k} r="1.8" fill="#FFD27A" opacity="0">
+                        <animateMotion dur={dur.toFixed(2) + "s"} begin={begin} repeatCount="indefinite" path={pathD} />
+                        <animate attributeName="opacity" values="0;0.9;0.9;0" keyTimes="0;0.15;0.78;1" dur={dur.toFixed(2) + "s"} begin={begin} repeatCount="indefinite" />
+                      </circle>
+                    );
+                  })}
+                </g>
+              );
+            })}
+
+            {/* 5 · SWEEP — trailing violet wedge + glowing leading edge, pure CSS spin.
+                key={period} restarts the rotation cleanly when the speed changes. */}
+            {!reduced && (
+              <g key={period} className="q-radar-sweep" style={{ animationDuration: period + "s" }}>
+                <path d={sweepPath} fill="url(#qSweepGrad)" />
+                <line x1={cx} y1={cy} x2={cx + R_OUT} y2={cy} stroke="#C4B5FD" strokeWidth="1.5" strokeOpacity="0.9" style={{ filter: "drop-shadow(0 0 4px rgba(139,92,246,0.9))" }} />
+              </g>
+            )}
+
+            {/* 6 · BLIPS — idle breathing dots; working cyan phosphor flares synced to the beam */}
             {nodes.map((n) => {
               const st = RADAR_STATES[n.state];
               const w = n.state === "working";
               const wt = w ? taskFor(n.agent.id, "In Progress") : null;
+              const color = w ? "#22D3EE" : st.color; // cyan is reserved for active cognition
+              const bearing = w ? bearingOf(n) : 0;
+              const flareDelay = (-(bearing / 360) * period).toFixed(3) + "s";
+              const breatheDur = 2.4 + (n.agent.id % 5) * 0.6; // 2.4–4.8s stagger
               return (
                 <g key={n.agent.id}>
-                  {w && <circle cx={n.x} cy={n.y} r="9" fill={st.color} opacity="0.22"><animate attributeName="r" values="7;12;7" dur="2s" repeatCount="indefinite" /></circle>}
+                  {w && (
+                    <circle cx={n.x} cy={n.y} r="8.5" fill="#22D3EE" opacity="0.16"
+                      className="q-radar-flare-halo" style={{ animationDuration: period + "s", animationDelay: flareDelay }} />
+                  )}
                   <circle cx={n.x} cy={n.y} r={w ? 4.4 : n.state === "idle" || n.state === "off" ? 2.4 : 3.4}
-                    fill={st.color} opacity={n.state === "off" ? 0.5 : 1}
-                    style={w ? { filter: "drop-shadow(0 0 4px " + st.color + ")" } : {}}>
+                    fill={color} opacity={n.state === "off" ? 0.5 : n.state === "idle" ? 0.55 : 1}
+                    className={w ? "q-radar-flare" : n.state === "idle" ? "q-radar-breathe" : undefined}
+                    style={w
+                      ? { filter: "drop-shadow(0 0 5px rgba(34,211,238,0.9))", animationDuration: period + "s", animationDelay: flareDelay }
+                      : n.state === "idle"
+                        ? { animationDuration: breatheDur + "s", animationDelay: (-((n.agent.id * 0.37) % breatheDur)).toFixed(2) + "s" }
+                        : {}}>
                     <title>{n.agent.code + " " + n.agent.name + " — " + st.label + (wt ? ": " + wt.title : "")}</title>
                   </circle>
                 </g>
               );
             })}
+
+            {/* 7 · CEO CORE — concentric rings, breathing dot, crosshair ticks, thought-waves */}
+            <circle cx={cx} cy={cy} r="34" fill="url(#coreGlow)" className="q-radar-corepulse" style={{ animationDuration: busy ? "1.2s" : "2.6s" }} />
+            {[0, 1, 2].map((k) => (
+              <circle key={"w" + k} cx={cx} cy={cy} r="44" fill="none" stroke={k === 1 ? "#A78BFA" : "#FFB020"} strokeWidth="1" opacity="0"
+                className="q-radar-wave" style={{ animationDelay: (k * 1.1) + "s" }} />
+            ))}
+            <circle cx={cx} cy={cy} r="22" fill="none" stroke="#FFB020" strokeOpacity="0.28" strokeWidth="0.8" strokeDasharray="2 5" />
+            <g stroke="#FFB020" strokeOpacity="0.7" strokeWidth="1.1">
+              <line x1={cx - 20} y1={cy} x2={cx - 16} y2={cy} />
+              <line x1={cx + 16} y1={cy} x2={cx + 20} y2={cy} />
+              <line x1={cx} y1={cy - 20} x2={cx} y2={cy - 16} />
+              <line x1={cx} y1={cy + 16} x2={cx} y2={cy + 20} />
+            </g>
+            <circle cx={cx} cy={cy} r="13" fill="#0B0713" stroke="#FFB020" strokeWidth="1.4" />
+            <circle cx={cx} cy={cy} r="5" fill="#FFB020" className="q-radar-corepulse" style={{ animationDuration: busy ? "0.7s" : "2.6s" }} />
+            <text x={cx} y={cy + 32} textAnchor="middle" fontSize="9.5" fill="#C4B5FD" letterSpacing="2" fontFamily="'Space Grotesk', sans-serif">{busy ? "CEO THINKING" : "CEO CORE"}</text>
+
+            {/* 8 · HUD CHROME — tiny mono corner readouts */}
+            <g fontFamily={monoFont} fontSize="8" letterSpacing="1.2">
+              <text x="12" y="20" fill="rgba(196,181,253,0.55)">{"SCAN " + period.toFixed(1) + "s"}</text>
+              <text x="588" y="20" textAnchor="end" fill="rgba(196,181,253,0.55)">{"AGENTS " + nodes.length}</text>
+              <text x="12" y="342" fill="rgba(196,181,253,0.35)">{busy ? "CEO THINKING" : anyWorking ? "UPLINK LIVE" : "GRID IDLE"}</text>
+              <text x="588" y="342" textAnchor="end" fill={anyWorking ? "rgba(34,211,238,0.75)" : "rgba(196,181,253,0.4)"}>{"ACTIVE " + workingNodes.length}</text>
+            </g>
           </svg>
 
           <div style={{ padding: "10px 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
