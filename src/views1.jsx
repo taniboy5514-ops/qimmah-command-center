@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio } from "lucide-react";
-import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
+import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio, Target, X } from "lucide-react";
+import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, wantsGoal, SKILL_CATALOG, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { downloadFile } from "./views3.jsx";
 import { getFileSha, commitFiles } from "./github-sync.js";
@@ -43,6 +43,21 @@ export function PendingApprovals({ log }) {
 
   if (!approvals || approvals.length === 0) return null;
 
+  /* Short context line from the approval args (goal steps carry their
+     tool args here, e.g. a WhatsApp message or invoice lines). */
+  function argsSummary(args) {
+    if (!args || typeof args !== "object") return "";
+    const parts = [];
+    if (args.to) parts.push("to +" + String(args.to).replace(/[^0-9]/g, ""));
+    if (args.recipientId) parts.push("to IG " + args.recipientId);
+    if (args.message) parts.push("\"" + String(args.message).slice(0, 80) + (args.message.length > 80 ? "…" : "") + "\"");
+    if (args.clientName) parts.push("client " + args.clientName);
+    if (args.kind && args.amount !== undefined) parts.push(args.kind + " OMR " + args.amount);
+    if (args.title) parts.push(String(args.title).slice(0, 60));
+    if (args.files) parts.push((args.files.length || 1) + " file(s): " + args.files.map((f) => f.path).join(", ").slice(0, 60));
+    return parts.slice(0, 2).join(" · ");
+  }
+
   async function decide(id, decision) {
     setBusyId(id);
     try {
@@ -58,28 +73,185 @@ export function PendingApprovals({ log }) {
     setBusyId("");
   }
 
+  async function approveAll() {
+    setBusyId("all");
+    for (const a of approvals) {
+      try {
+        const res = await fetch("/api/mcp/approve", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approvalId: a.id, decision: "approve" }),
+        });
+        if (res.ok) setApprovals((list) => (list || []).filter((x) => x.id !== a.id));
+      } catch (e) { /* keep the row */ }
+    }
+    log && log("approval", "Bulk-approved pending tool approvals");
+    setBusyId("");
+  }
+
   return (
     <Card style={{ marginBottom: 16, borderColor: "rgba(251,191,36,0.35)" }}>
-      <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: "#FBBF24", fontWeight: 600, marginBottom: 10 }}>
-        Pending approvals · {approvals.length}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: "#FBBF24", fontWeight: 600 }}>
+          Pending approvals · {approvals.length}
+        </div>
+        <button style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "#FBBF24", borderColor: "rgba(251,191,36,0.35)" }}
+          disabled={busyId === "all"} onClick={approveAll}>
+          <Check size={13} /> Approve All
+        </button>
       </div>
       {approvals.map((a) => (
         <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.06)", flexWrap: "wrap" }}>
-          <div>
+          <div style={{ minWidth: 0, flex: "1 1 200px" }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "#E9E4FB" }}>{a.tool_name}</div>
+            {argsSummary(a.args) && <div style={{ fontSize: 11.5, color: "#B8B3CC", marginTop: 1 }}>{argsSummary(a.args)}</div>}
             <div style={{ fontSize: 11, color: "#8B86A3" }}>{timeAgo(new Date(a.created_at).getTime())} · agent {String(a.agent_id).slice(0, 8)}</div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button style={{ ...btnPrimary, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}>
+            <button style={{ ...btnPrimary, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id || busyId === "all"} onClick={() => decide(a.id, "approve")}>
               <Check size={13} /> Approve
             </button>
-            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}>
+            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12 }} disabled={busyId === a.id || busyId === "all"} onClick={() => decide(a.id, "reject")}>
               Reject
             </button>
           </div>
         </div>
       ))}
     </Card>
+  );
+}
+
+/* ============================================================
+   GOAL MODE — progress card. Polls /api/ceo/goals; when a goal is
+   active it shows prompt, Step X of N, progress bar, elapsed time
+   and status, with pause/resume/cancel controls. Fully hidden when
+   the backend is not configured (graceful, no errors).
+   ============================================================ */
+export function GoalProgressCard({ log }) {
+  const [goals, setGoals] = useState(null); // null = backend not detected
+  const [tick, setTick] = useState(0); // re-render for elapsed time
+
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const res = await fetch("/api/ceo/goals");
+        if (!alive) return;
+        if (res.ok) {
+          const json = await res.json();
+          setGoals(json.goals || []);
+        } // 401/404/500 → backend not live; stay hidden
+      } catch (e) { /* backend not configured — stay hidden */ }
+    }
+    poll();
+    const t = setInterval(poll, 15000);
+    const e = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => { alive = false; clearInterval(t); clearInterval(e); };
+  }, []);
+
+  if (!goals) return null;
+  const goal = goals.find((g) => g.status === "active") || goals.find((g) => g.status === "paused") || null;
+  if (!goal) return null;
+
+  const steps = goal.steps || [];
+  const done = steps.filter((s) => s.status === "done").length;
+  const total = steps.length;
+  const current = steps.find((s) => s.status === "running" || s.status === "ready" || s.status === "blocked");
+  const pct = Math.round((goal.progress != null ? Number(goal.progress) : total ? done / total : 0) * 100);
+  const elapsedMin = Math.max(1, Math.round((Date.now() - new Date(goal.created_at).getTime()) / 60000));
+  const statusColor = { active: CYAN, paused: "#FBBF24", completed: "#34D399", cancelled: "#F87171" }[goal.status] || CYAN;
+
+  async function control(action) {
+    try {
+      const res = await fetch("/api/ceo/goals", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: goal.id, action }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setGoals((list) => (list || []).map((g) => (g.id === goal.id ? { ...g, ...json.goal, steps: g.steps } : g)));
+        log && log("system", "Goal " + action + "d: " + goal.prompt.slice(0, 50));
+        if (action === "cancel") setGoals((list) => (list || []).filter((g) => g.id !== goal.id));
+      }
+    } catch (e) { /* leave state as-is */ }
+  }
+
+  return (
+    <Card style={{ marginBottom: 16, borderColor: "rgba(6,182,212,0.35)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: CYAN, fontWeight: 600, display: "flex", alignItems: "center", gap: 7 }}>
+          <Target size={13} /> Goal Mode · Step {Math.min(done + 1, total)} of {total}
+        </div>
+        <div style={{ fontSize: 11, color: "#8B86A3" }}>
+          <span style={{ color: statusColor, fontWeight: 700, textTransform: "uppercase" }}>{goal.status}</span>
+          {" · "}{elapsedMin < 60 ? elapsedMin + "m" : Math.floor(elapsedMin / 60) + "h " + (elapsedMin % 60) + "m"} elapsed
+        </div>
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: "#E9E4FB", marginBottom: 4 }}>{goal.prompt}</div>
+      {current && goal.status === "active" && (
+        <div style={{ fontSize: 11.5, color: "#8B86A3", marginBottom: 8 }}>
+          Now: {current.title} ({current.squad} · {current.tool_name}){current.status === "blocked" ? " — waiting for approval" : ""}
+        </div>
+      )}
+      <div style={{ height: 8, borderRadius: 6, background: "rgba(255,255,255,0.07)", overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ height: "100%", width: pct + "%", borderRadius: 6, background: "linear-gradient(90deg,#7C3AED,#06B6D4)", transition: "width 0.6s ease" }} />
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {goal.status === "active" && <button style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }} onClick={() => control("pause")}>Pause</button>}
+        {goal.status === "paused" && <button style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "#34D399", borderColor: "rgba(52,211,153,0.35)" }} onClick={() => control("resume")}>Resume</button>}
+        <button style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "#F87171", borderColor: "rgba(248,113,113,0.3)" }} onClick={() => control("cancel")}>Cancel</button>
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================
+   START AS GOAL — shown under a CEO reply when the user's message
+   read as an objective. Probes the backend once and stays hidden
+   when Goal Mode is not configured.
+   ============================================================ */
+export function GoalOffer({ prompt, log }) {
+  const [state, setState] = useState("probing"); // probing | ready | starting | started | hidden
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/ceo/goals");
+        if (alive) setState(res.ok ? "ready" : "hidden");
+      } catch (e) { if (alive) setState("hidden"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (state === "probing" || state === "hidden") return null;
+
+  async function start() {
+    setState("starting");
+    try {
+      const res = await fetch("/api/ceo/goals", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (res.ok) {
+        setState("started");
+        log && log("system", "Goal started: " + prompt.slice(0, 60));
+      } else {
+        setState("ready");
+      }
+    } catch (e) { setState("ready"); }
+  }
+
+  if (state === "started") {
+    return (
+      <div style={{ marginTop: 6, fontSize: 12, color: "#34D399", display: "flex", alignItems: "center", gap: 6 }}>
+        <Check size={13} /> Goal started — watch the Goal Mode card above.
+      </div>
+    );
+  }
+  return (
+    <button style={{ ...btnGhost, marginTop: 6, padding: "7px 14px", fontSize: 12.5, color: CYAN, borderColor: "rgba(6,182,212,0.4)" }}
+      disabled={state === "starting"} onClick={start}>
+      <Target size={13} /> {state === "starting" ? "Planning steps…" : "Start as Goal"}
+    </button>
   );
 }
 
@@ -348,6 +520,7 @@ export function CEOChat({ S, up, log, user, go }) {
   const [showVoice, setShowVoice] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [copied, setCopied] = useState("");
+  const [showSkills, setShowSkills] = useState(false);
   const scrollRef = useRef(null);
   const recRef = useRef(null);
   const audioRef = useRef(null);
@@ -508,7 +681,7 @@ export function CEOChat({ S, up, log, user, go }) {
       const raw = await aiCall(S, sys, history);
       const parsed = parseActions(raw);
       let reply = parsed.clean || raw;
-      const aiMsg = { id: uid(), role: "assistant", content: reply, actions: parsed.actions || null, applied: false, links: [], ts: Date.now() };
+      const aiMsg = { id: uid(), role: "assistant", content: reply, actions: parsed.actions || null, applied: false, links: [], ts: Date.now(), goalOffer: wantsGoal(text) ? text : null };
       const cat = classifyInsight(reply);
       const insight = { id: uid(), cat, text: reply.replace(/[*#_`]/g, "").slice(0, 200), ts: Date.now() };
       up((s) => ({
@@ -640,6 +813,7 @@ export function CEOChat({ S, up, log, user, go }) {
     <div>
       <OpsRadar S={S} busy={busy} />
       <AutopilotPanel S={S} up={up} log={log} user={user} />
+      <GoalProgressCard log={log} />
       <PendingApprovals log={log} />
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "stretch" }}>
       <div style={{ flex: "1 1 460px", minWidth: 300, display: "flex", flexDirection: "column", ...glass, overflow: "hidden" }}>
@@ -770,6 +944,9 @@ export function CEOChat({ S, up, log, user, go }) {
                   </div>
                 </div>
               )}
+              {m.role === "assistant" && m.goalOffer && !m.fleet && (
+                <GoalOffer prompt={m.goalOffer} log={log} />
+              )}
               {m.role === "assistant" && m.actions && m.actions.length > 0 && (
                 <div style={{ marginTop: 6, padding: 10, borderRadius: 10, background: "rgba(255,176,32,0.08)", border: "1px solid rgba(255,176,32,0.3)" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>
@@ -823,7 +1000,28 @@ export function CEOChat({ S, up, log, user, go }) {
         )}
 
         {/* Composer */}
-        <div style={{ display: "flex", gap: 10, padding: 14, borderTop: "1px solid rgba(255,255,255,0.07)", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, padding: 14, borderTop: "1px solid rgba(255,255,255,0.07)", alignItems: "center", position: "relative" }}>
+          {showSkills && (
+            <div style={{ position: "absolute", bottom: 76, left: 14, right: 14, zIndex: 20, ...glass, background: "rgba(15,10,26,0.96)", padding: 12, maxHeight: 300, overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: CYAN, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Target size={12} /> Skills Registry — start a Goal
+                </div>
+                <button style={{ background: "none", border: "none", color: "#8B86A3", cursor: "pointer", padding: 0 }} onClick={() => setShowSkills(false)}><X size={14} /></button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {SKILL_CATALOG.map((sk) => (
+                  <button key={sk.name} style={{ ...btnGhost, justifyContent: "flex-start", textAlign: "left", padding: "8px 12px" }}
+                    onClick={() => { setDraft(sk.prompt); setShowSkills(false); }}>
+                    <span>
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#E9E4FB" }}>{sk.label}</span>
+                      <span style={{ display: "block", fontSize: 11, color: "#8B86A3" }}>{sk.desc}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button onClick={toggleMic} title={listening ? "Stop listening" : "Speak to your AI CEO"}
             style={{
               width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0,
@@ -843,6 +1041,10 @@ export function CEOChat({ S, up, log, user, go }) {
             value={draft} onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") send(); }}
           />
+          <button style={{ ...btnGhost, padding: "12px 14px", ...(showSkills ? { color: CYAN, borderColor: "rgba(6,182,212,0.45)" } : {}) }}
+            title="Skills Registry — 8 goal playbooks" onClick={() => setShowSkills(!showSkills)}>
+            <Target size={16} />
+          </button>
           <button style={{ ...btnPrimary, padding: "12px 16px" }} onClick={() => send()} disabled={busy}>
             <Send size={16} />
           </button>
