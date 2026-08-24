@@ -348,6 +348,30 @@ export const TOOL_CATALOG = [
   { name: "test_connector", desc: "Test an external connector's credentials and reachability", squads: ["Delta", "Gamma"], approval: false },
 ];
 
+/* ============================================================
+   GOAL MODE — client-side mirror of backend/lib/ceo/skills.js.
+   The server is the source of truth; these templates pre-fill
+   the CEO chat from the Skills Registry popover.
+   ============================================================ */
+export const SKILL_CATALOG = [
+  { name: "market_research", label: "Market Research", desc: "Competitors, pricing and gaps in Oman/GCC", prompt: "Goal: research the market for our services — competitors, pricing, and gaps we can win in Oman." },
+  { name: "lead_generation", label: "Lead Generation", desc: "Find leads, fill the pipeline, queue outreach", prompt: "Goal: get me 5 new clients in the restaurant segment — research them, add them to the pipeline and prepare outreach." },
+  { name: "client_followup", label: "Client Follow-up", desc: "Nudge warm leads and move them forward", prompt: "Goal: follow up with every warm lead — review the pipeline and send nudges." },
+  { name: "financial_review", label: "Financial Review", desc: "Income, expenses, invoices, next actions", prompt: "Goal: run a full financial review — income, expenses, unpaid invoices, and next actions." },
+  { name: "website_audit", label: "Website Audit", desc: "SEO and performance gaps + fix tasks", prompt: "Goal: audit our website and SEO — find the gaps and queue the fixes." },
+  { name: "content_campaign", label: "Content Campaign", desc: "Angles, calendar and production tasks", prompt: "Goal: launch a content campaign for Army Burger — angles, calendar, and production tasks." },
+  { name: "proposal_builder", label: "Proposal Builder", desc: "Research, offer structure, draft invoice", prompt: "Goal: build a proposal for a new real-estate client — research, offer structure, and a draft invoice." },
+  { name: "ops_cleanup", label: "Ops Cleanup", desc: "Clear stalled work, test connectors, fix", prompt: "Goal: operations cleanup — clear stalled work, test connectors, propose fixes." },
+];
+
+/* Goal-intent detection — a message that reads as an objective (explicit
+   "goal:" prefix, "get me X clients by Friday", or a target with a
+   deadline) offers a "Start as Goal" action under the CEO reply. */
+export const GOAL_INTENT_RE = /(^\s*goal\s*:|\bget me\b.{0,60}\b(client|lead|sale|invoice)s?\b|\b(objective|mission)\b|\b(by|before)\s+(friday|monday|tuesday|wednesday|thursday|saturday|sunday|end of (day|week|month)|eod|eow)\b|\btarget\b.{0,50}\b(omr|clients|revenue)\b)/i;
+export function wantsGoal(text) {
+  return GOAL_INTENT_RE.test(String(text || ""));
+}
+
 /* Honest-limits note shown on the MCP Discovery panel. */
 export const MCP_LIMITS_NOTE = "Honest limits: WhatsApp and Instagram tools return mock success until Meta API credentials are configured; web_search and study_topic are LLM knowledge synthesis, not a live web crawl; self_edit_code stages edits only — commits go through the human-approved GitHub flow.";
 export const GROQ_MODEL_LABELS = {
