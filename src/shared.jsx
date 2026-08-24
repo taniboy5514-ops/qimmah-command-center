@@ -326,6 +326,30 @@ export function applyActions(actions, S, up, log) {
    decommissioned message), automatically try the next production model so the
    fleet never goes silent. S.groqModel (Settings) forces a specific model first. */
 export const GROQ_MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "moonshotai/kimi-k2-instruct-0905", "meta-llama/llama-4-scout-17b-16e-instruct", "openai/gpt-oss-20b"];
+
+/* ============================================================
+   MCP TOOL CATALOG — client-side mirror of backend/lib/mcp/registry.js.
+   Keep in sync with the registry; the server is the source of truth.
+   approval: true tools show amber and require human sign-off.
+   ============================================================ */
+export const TOOL_CATALOG = [
+  { name: "send_whatsapp_message", desc: "Send a WhatsApp message via the WhatsApp Business API", squads: ["Alpha", "Epsilon"], approval: true },
+  { name: "send_instagram_dm", desc: "Send an Instagram DM via the Meta Instagram API", squads: ["Alpha"], approval: true },
+  { name: "create_lead", desc: "Add a new lead to the pipeline", squads: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"], approval: false },
+  { name: "update_lead_status", desc: "Move a lead to a new pipeline status", squads: ["Alpha", "Epsilon"], approval: false },
+  { name: "web_search", desc: "Research a query via the Groq model fallback chain", squads: ["Beta", "Gamma", "Delta"], approval: false },
+  { name: "study_topic", desc: "Produce a study brief and save it to the knowledge base", squads: ["Beta", "Gamma", "Delta"], approval: false },
+  { name: "record_transaction", desc: "Record an income or expense transaction", squads: ["Delta", "Epsilon"], approval: true },
+  { name: "create_invoice", desc: "Draft an invoice with line items", squads: ["Delta", "Epsilon"], approval: true },
+  { name: "create_task", desc: "Create a tracked task", squads: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"], approval: false },
+  { name: "complete_task", desc: "Mark a task as done", squads: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"], approval: false },
+  { name: "self_edit_code", desc: "Propose code edits (max 3 files, no deletions, no secrets)", squads: ["Delta"], approval: true },
+  { name: "query_analytics", desc: "Query workspace analytics from real rows", squads: ["Gamma", "Delta"], approval: false },
+  { name: "test_connector", desc: "Test an external connector's credentials and reachability", squads: ["Delta", "Gamma"], approval: false },
+];
+
+/* Honest-limits note shown on the MCP Discovery panel. */
+export const MCP_LIMITS_NOTE = "Honest limits: WhatsApp and Instagram tools return mock success until Meta API credentials are configured; web_search and study_topic are LLM knowledge synthesis, not a live web crawl; self_edit_code stages edits only — commits go through the human-approved GitHub flow.";
 export const GROQ_MODEL_LABELS = {
   "openai/gpt-oss-120b": "GPT-OSS 120B (default — production)",
   "qwen/qwen3.6-27b": "Qwen 3.6 27B (multilingual, vision)",
