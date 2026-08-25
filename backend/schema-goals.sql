@@ -70,7 +70,7 @@ insert into skills (workspace_id, name, description, keywords, steps, builtin) v
    '[{"title":"Research lead sources","squad":"Gamma","tool_name":"web_search"},{"title":"Create leads in the pipeline","squad":"Alpha","tool_name":"create_lead"},{"title":"Prepare WhatsApp outreach","squad":"Alpha","tool_name":"send_whatsapp_message","needs_approval":true}]'::jsonb, true),
   (null, 'client_followup', 'Follow up with existing leads and move them forward in the pipeline.',
    '{follow up,follow-up,followup,nudge,warm lead,check in,re-engage}',
-   '[{"title":"Review pipeline status","squad":"Alpha","tool_name":"query_analytics","tool_args":{"metric":"leads"}},{"title":"Send follow-up WhatsApp messages","squad":"Alpha","tool_name":"send_whatsapp_message","needs_approval":true}]'::jsonb, true),
+   '[{"title":"Review pipeline status","squad":"Gamma","tool_name":"query_analytics","tool_args":{"metric":"leads"}},{"title":"Send follow-up WhatsApp messages","squad":"Alpha","tool_name":"send_whatsapp_message","needs_approval":true}]'::jsonb, true),
   (null, 'financial_review', 'Review income, expenses and invoices; record any missing transactions.',
    '{finance,financial,money,revenue,expense,invoice,profit,omr,budget}',
    '[{"title":"Query finance analytics","squad":"Delta","tool_name":"query_analytics","tool_args":{"metric":"finance"}},{"title":"Record any missing transaction","squad":"Delta","tool_name":"record_transaction","needs_approval":true},{"title":"Draft outstanding invoice","squad":"Delta","tool_name":"create_invoice","needs_approval":true}]'::jsonb, true),
