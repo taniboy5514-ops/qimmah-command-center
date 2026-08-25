@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { CheckCircle2, Circle, ListTodo, Plus, ChevronLeft, ChevronRight, Trash2, Wallet, FileText, Paperclip, Download, ExternalLink, Inbox, RefreshCw, Settings, Send } from "lucide-react";
 import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Field, glass, inputStyle, btnPrimary, btnGhost, uid, omr, timeAgo, lastMonths, REVENUE_TARGET, COLS, IN_PREVIEW, TOOL_CATALOG } from "./shared.jsx";
 import { SquadCyclePanel, SquadDirectiveCards, FleetActivity } from "./squadcycle.jsx";
+import { useRunnerStatus } from "./taskrunner.jsx";
 /* ============================================================
    SQUAD TOOLKIT — static mirror of the MCP registry
    (TOOL_CATALOG in shared.jsx). Green = runs automatically,
@@ -109,6 +110,9 @@ export function Tasks({ S, up, log }) {
   const [title, setTitle] = useState("");
   const [prio, setPrio] = useState("Medium");
   const [agentId, setAgentId] = useState("");
+  const runner = useRunnerStatus();
+  const runnerOn = S.runnerOn !== false;
+  const openCount = S.tasks.filter((t) => t.col === "Backlog" || t.col === "In Progress").length;
 
   function addTask() {
     const t = title.trim();
@@ -129,6 +133,24 @@ export function Tasks({ S, up, log }) {
   return (
     <div>
       <SectionTitle eyebrow="Execution" title="Tasks Board" sub="Assign work to specific agents and move it through the pipeline. Completed tasks feed your analytics." />
+      <Card style={{ marginBottom: 18, padding: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: runnerOn ? CYAN : "#8B86A3", cursor: "pointer" }}
+          title="While this app is open, the fleet automatically works your board: In Progress tasks get executed and handed into Review.">
+          <input type="checkbox" checked={runnerOn} style={{ accentColor: CYAN }}
+            onChange={(e) => { up((s) => ({ ...s, runnerOn: e.target.checked })); log("runner", "Task auto-run turned " + (e.target.checked ? "ON" : "OFF")); }} />
+          ⚙ Auto-run tasks
+        </label>
+        <span style={{ fontSize: 11.5, color: runner.working ? "#FFD27A" : "#8B86A3", display: "flex", alignItems: "center", gap: 7 }}>
+          {runner.working && <span className="q-blink" style={{ width: 6, height: 6, borderRadius: "50%", background: "#FFB020", display: "inline-block" }} />}
+          {!runnerOn
+            ? "auto-run off — tasks wait for you"
+            : runner.working
+              ? "working on '" + (runner.title.length > 36 ? runner.title.slice(0, 34) + "…" : runner.title) + "'" + (runner.remaining > 0 ? " · " + runner.remaining + " to go" : "")
+              : openCount > 0
+                ? "idle — " + openCount + " task" + (openCount > 1 ? "s" : "") + " queued"
+                : "idle — board clear"}
+        </span>
+      </Card>
       <Card style={{ marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <Field label="New task">
@@ -163,6 +185,12 @@ export function Tasks({ S, up, log }) {
                     return (
                       <div key={t.id} style={{ background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontSize: 13, color: "#E9E4FB", marginBottom: 6, lineHeight: 1.4 }}>{t.title}</div>
+                        {t.resultId && (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(34,211,238,0.12)", color: "#22D3EE", border: "1px solid rgba(34,211,238,0.35)", marginBottom: 6 }}
+                            title="The agent's finished deliverable is saved in the Results tab">
+                            📦 deliverable in Results
+                          </div>
+                        )}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: PRIORITIES[t.prio] + "22", color: PRIORITIES[t.prio] }}>{t.prio}</span>
                           <div style={{ display: "flex", gap: 4 }}>
@@ -204,7 +232,7 @@ export function Finance({ S, up, log }) {
     const rec = { id: uid(), desc: tx.desc.trim(), amount, type: tx.type, date: new Date().toISOString().slice(0, 10) };
     up((s) => ({ ...s, transactions: [rec, ...s.transactions] }));
     log("finance", (tx.type === "income" ? "Income" : "Expense") + " recorded: " + omr(amount) + " — " + tx.desc.slice(0, 40));
-    setTx({ desc: "", amount: "", type: tx.type });
+    setTx({ desc: "", amount: "", type: "income" });
   }
   function addInv() {
     const amount = Number(inv.amount);
@@ -644,7 +672,7 @@ export function Leads({ S, up, log }) {
                   </button>
                 </div>
                 {l.message && <div style={{ fontSize: 12.5, color: "#C9C4DC", lineHeight: 1.55, marginBottom: 8 }}>{l.message}</div>}
-                <div style={{ fontSize: 10.5, color: "#6B6685", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>{l.source} · {timeAgo(l.ts)}</div>
+                <div style={{ fontSize: 10.5, color: "#6B6685", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>{l.source} · {timeAgo(l.ts)}</div>}
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   {isPhone(l.contact) && (
                     <a href={"https://wa.me/" + l.contact.replace(/[^0-9]/g, "")} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}>
