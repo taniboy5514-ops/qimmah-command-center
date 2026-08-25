@@ -25,7 +25,7 @@ function BarsChart({ months, incomeBy, expenseBy }) {
         );
       })}
       <defs>
-        <linearGradient id="qgrad" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id="qgrad" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#7C3AED" /><stop offset="100%" stopColor="#06B6D4" />
         </linearGradient>
       </defs>
@@ -1203,12 +1203,73 @@ export function LiveFeed({ S, up }) {
 /* ============================================================
    OVERVIEW — setup checklist + live KPIs
    ============================================================ */
+/* Small pill for the System Health strip. color: green ok, amber warn, grey off. */
+function HealthPill({ color, label, title, onClick }) {
+  const El = onClick ? "button" : "span";
+  return (
+    <El onClick={onClick} title={title}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 7, fontSize: 11.5, fontWeight: 600,
+        padding: "5px 12px", borderRadius: 20, fontFamily: "inherit", textAlign: "left",
+        cursor: onClick ? "pointer" : "default",
+        color, background: color + "14", border: "1px solid " + color + "44",
+      }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, boxShadow: "0 0 7px " + color, flexShrink: 0 }} />
+      {label}
+    </El>
+  );
+}
+
+const HEALTH_GREEN = "#34D399", HEALTH_AMBER = "#FBBF24", HEALTH_GREY = "#6B6685";
+
 export function Overview({ S, go }) {
   const thisMonth = lastMonths(1)[0];
   const income = S.transactions.filter((t) => t.type === "income" && t.date.startsWith(thisMonth)).reduce((a, t) => a + t.amount, 0);
   const active = AGENTS.length - Object.keys(S.agentsOff).length;
   const openTasks = S.tasks.filter((t) => t.col !== "Done").length;
   const pct = Math.min(100, Math.round((income / REVENUE_TARGET) * 100));
+
+  /* SYSTEM HEALTH — one silent probe of the backend (MCP discovery endpoint)
+     and one poll of the approval queue (same data source as PendingApprovals
+     in views1.jsx). Both degrade quietly when no backend is deployed. */
+  const [backend, setBackend] = useState("checking"); // checking | ok | error | not-configured
+  const [approvals, setApprovals] = useState(null);   // null = backend didn't answer
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/mcp/discover");
+        if (!alive) return;
+        const ct = res.headers.get("content-type") || "";
+        if (res.ok && ct.includes("json")) setBackend("ok");
+        else if (res.status === 404 || res.ok) setBackend("not-configured"); // SPA fallback HTML = no backend
+        else setBackend("error");
+      } catch (e) { if (alive) setBackend("not-configured"); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const res = await fetch("/api/mcp/approve");
+        if (!alive) return;
+        if (res.ok) { const j = await res.json(); setApprovals((j.approvals || []).length); }
+      } catch (e) { /* backend not configured — the action item stays hidden */ }
+    }
+    poll();
+    const t = setInterval(poll, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  const taskCounts = { Backlog: 0, "In Progress": 0, Review: 0, Done: 0 };
+  S.tasks.forEach((t) => { if (taskCounts[t.col] != null) taskCounts[t.col]++; });
+  const agentsOffline = Object.keys(S.agentsOff || {}).length;
+  const runnerOn = S.runnerOn !== false;
+  const engineOn = !!S.groqKey || IN_PREVIEW;
+  /* S.backendOn is set by the login/session bridge in app.jsx when a backend
+     session is live — trust it even before (or without) the probe answering. */
+  const backendOk = backend === "ok" || S.backendOn === true;
 
   const checklist = [
     { done: !!S.groqKey || IN_PREVIEW, label: IN_PREVIEW ? "AI CEO engine — active (preview runs keyless; add Groq key after deploy)" : "Connect Groq API key — activate the AI CEO", goto: "ceo" },
@@ -1225,7 +1286,7 @@ export function Overview({ S, go }) {
       <div style={{ ...glass, padding: "28px 24px", marginBottom: 18, position: "relative", overflow: "hidden", boxShadow: "0 0 60px rgba(124,58,237,0.15)" }}>
         <svg viewBox="0 0 400 90" preserveAspectRatio="none" style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 90, opacity: 0.25 }} aria-hidden="true">
           <polyline points="0,90 60,55 110,70 170,25 230,45 300,8 400,38 400,90" fill="none" stroke="url(#peak)" strokeWidth="2" />
-          <defs><linearGradient id="peak" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#7C3AED" /><stop offset="100%" stopColor="#06B6D4" /></linearGradient></defs>
+          <defs><linearGradient id="peak" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#7C3AED" /><stop offset="100%" stopColor="#06B6D4" /></linearGradient></defs>
         </svg>
         <div style={{ fontSize: 12, letterSpacing: 3, textTransform: "uppercase", color: CYAN, fontWeight: 700, marginBottom: 8 }}>CEO Command Center</div>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif", background: "linear-gradient(90deg,#EDE9FE,#A78BFA)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
@@ -1236,6 +1297,53 @@ export function Overview({ S, go }) {
           One founder, 60 AI agents, one target: {omr(REVENUE_TARGET)}/month. Every number on this dashboard is real — it moves only when your business moves.
         </p>
       </div>
+
+      {/* System Health strip — live status of the engine, backend and fleet */}
+      <div style={{ ...glass, padding: "10px 14px", marginBottom: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#8B86A3", display: "inline-flex", alignItems: "center", gap: 6, marginRight: 2 }}>
+          <Activity size={12} style={{ color: CYAN }} /> System health
+        </span>
+        <HealthPill
+          color={backendOk ? HEALTH_GREEN : backend === "error" ? HEALTH_AMBER : HEALTH_GREY}
+          label={"Backend · " + (backendOk ? "connected" : backend === "error" ? "error" : backend === "checking" ? "checking…" : "offline (local mode)")}
+          title={backendOk ? "The backend API answered — approvals, goals and the MCP log are live." : "Backend offline — the app runs in local mode; approvals, goals and the MCP log stay hidden. Sign in again to retry."} />
+        <HealthPill
+          color={engineOn ? HEALTH_GREEN : HEALTH_AMBER}
+          label={engineOn ? (IN_PREVIEW && !S.groqKey ? "AI engine · preview (keyless)" : "Groq key · set") : "Groq key · missing"}
+          title={engineOn ? "The AI CEO engine is ready." : "Open the AI CEO tab → Settings and paste a free Groq key to wake the fleet."}
+          onClick={engineOn ? undefined : () => go("ceo")} />
+        <HealthPill
+          color={runnerOn ? HEALTH_GREEN : HEALTH_GREY}
+          label={"Auto-run · " + (runnerOn ? "on" : "off")}
+          title="While the app is open, the fleet executes In Progress board tasks automatically."
+          onClick={() => go("tasks")} />
+        <HealthPill
+          color={CYAN}
+          label={"Tasks · " + taskCounts.Backlog + " backlog · " + taskCounts["In Progress"] + " active · " + taskCounts.Review + " review · " + taskCounts.Done + " done"}
+          onClick={() => go("tasks")} />
+      </div>
+
+      {/* Action items — only when something genuinely needs the founder */}
+      {(taskCounts.Review > 0 || (approvals || 0) > 0 || agentsOffline > 0) && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#FBBF24" }}>Action items</span>
+          {taskCounts.Review > 0 && (
+            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, color: "#FBBF24", borderColor: "rgba(251,191,36,0.4)" }} onClick={() => go("tasks")}>
+              {taskCounts.Review} task{taskCounts.Review === 1 ? "" : "s"} in Review — Review now <ChevronRight size={13} />
+            </button>
+          )}
+          {(approvals || 0) > 0 && (
+            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, color: "#FBBF24", borderColor: "rgba(251,191,36,0.4)" }} onClick={() => go("ceo")}>
+              {approvals} pending approval{approvals === 1 ? "" : "s"} — Review now <ChevronRight size={13} />
+            </button>
+          )}
+          {agentsOffline > 0 && (
+            <button style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, color: "#8B86A3" }} onClick={() => go("agents")}>
+              {agentsOffline} agent{agentsOffline === 1 ? "" : "s"} offline <ChevronRight size={13} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* KPIs */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
