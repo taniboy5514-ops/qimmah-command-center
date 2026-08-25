@@ -1,0 +1,6 @@
+line1
+const a = "x\ny"; // literal backslash-n inside JS string
+const b = {"\u2022"};
+const re = /```json\s*([\s\S]*?)```/;
+const q = "\"summary\":\"2-4\"";
+const tail = "end";
