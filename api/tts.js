@@ -9,15 +9,17 @@
  * - rate:  0.5–2.0 multiplier (mapped to Edge "-50%".."+100%").
  * - text:  capped at 2000 chars.
  *
- * Optional shared-secret: if TTS_KEY is set in the environment, requests must
- * send the same value in the `x-tts-key` header. When unset the endpoint is
- * open (the owner's own app).
+ * Auth: the shared JWT session cookie (same requireAuth pattern as the other
+ * /api routes). Graceful degradation: if the backend is not configured yet
+ * (no JWT_SECRET), the call is allowed so the free TTS keeps working
+ * pre-backend — matching this app's "honest limits" posture.
  *
  * Honest caveat: this uses an unofficial, free Microsoft Edge service — it
  * could change or be rate-limited at any time. The frontend falls back to
  * the browser voice automatically if this endpoint fails.
  */
 import { EdgeTTS } from "node-edge-tts";
+import { requireAuth } from "../backend/lib/auth.js";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -48,9 +50,16 @@ function jsonError(res, status, error) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return jsonError(res, 405, "Method not allowed — use POST.");
 
-  if (process.env.TTS_KEY) {
-    const key = req.headers["x-tts-key"];
-    if (key !== process.env.TTS_KEY) return jsonError(res, 401, "Invalid or missing x-tts-key header.");
+  // Auth via the JWT session cookie. If the backend is not configured yet
+  // (JWT_SECRET unset / auth helper unavailable), allow the call so the free
+  // TTS endpoint keeps working pre-backend (honest-limits degradation).
+  if (process.env.JWT_SECRET) {
+    try {
+      const session = requireAuth(req, res);
+      if (!session) return;
+    } catch (e) {
+      console.warn("[tts] auth unavailable, allowing call:", e && e.message);
+    }
   }
 
   const body = req.body || {};
