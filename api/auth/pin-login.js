@@ -17,6 +17,54 @@ import { getSession, setSessionCookie, clearSessionCookie, signSession } from ".
 
 const PIN_RE = /^\d{4,8}$/;
 
+/** Brute-force throttle: `${ip}|${name.toLowerCase()}` -> { fails, until }.
+ *  5 failed PIN attempts locks the IP+name pair for 15 minutes (429). */
+const LOGIN_FAILS = new Map();
+const MAX_FAILS = 5;
+const LOCK_MS = 15 * 60 * 1000;
+
+function clientIp(req) {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : String(fwd || "")).split(",")[0].trim();
+  return first || (req.socket && req.socket.remoteAddress) || "unknown";
+}
+
+function throttleKey(req, name) {
+  return `${clientIp(req)}|${name.toLowerCase()}`;
+}
+
+function isLockedOut(key) {
+  const entry = LOGIN_FAILS.get(key);
+  if (!entry) return false;
+  if (entry.until && entry.until > Date.now()) return true;
+  if (entry.until && entry.until <= Date.now()) LOGIN_FAILS.delete(key); // lockout expired
+  return false;
+}
+
+function recordFail(key) {
+  const now = Date.now();
+  const entry = LOGIN_FAILS.get(key) || { fails: 0, until: 0 };
+  if (entry.until && entry.until <= now) { entry.fails = 0; entry.until = 0; }
+  entry.fails += 1;
+  if (entry.fails >= MAX_FAILS) entry.until = now + LOCK_MS;
+  LOGIN_FAILS.set(key, entry);
+  // Opportunistic cleanup so the map cannot grow unbounded.
+  if (LOGIN_FAILS.size > 10000) {
+    for (const [k, v] of LOGIN_FAILS) {
+      if (!v.until || v.until <= now) LOGIN_FAILS.delete(k);
+    }
+  }
+}
+
+function clearFails(key) {
+  LOGIN_FAILS.delete(key);
+}
+
+/** Escape PostgREST ilike wildcards (% and _) and the escape char itself. */
+function escapeIlike(value) {
+  return value.replace(/[\\%_]/g, (m) => "\\" + m);
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
@@ -44,12 +92,19 @@ export default async function handler(req, res) {
     if (!name) return res.status(400).json({ error: "Name is required" });
     if (!PIN_RE.test(pin)) return res.status(400).json({ error: "PIN must be 4-8 digits" });
 
+    // Brute-force throttle: refuse before doing any DB work while locked out.
+    const tKey = throttleKey(req, name);
+    if (isLockedOut(tKey)) {
+      return res.status(429).json({ error: "Too many failed attempts — try again in 15 minutes" });
+    }
+
     // Look for an existing user with this name across workspaces by
-    // matching name first, then verifying the PIN hash.
+    // matching name first, then verifying the PIN hash. Wildcards are
+    // escaped so user input cannot widen the ilike match.
     const { data: candidates, error: findErr } = await db
       .from("users")
       .select("id, workspace_id, name, role, pin_hash")
-      .ilike("name", name)
+      .ilike("name", escapeIlike(name))
       .limit(5);
     if (findErr) return res.status(500).json({ error: findErr.message });
 
@@ -63,6 +118,10 @@ export default async function handler(req, res) {
 
     if (!user && (candidates || []).length > 0) {
       // Name exists but PIN didn't match any account.
+      recordFail(tKey);
+      if (isLockedOut(tKey)) {
+        return res.status(429).json({ error: "Too many failed attempts — try again in 15 minutes" });
+      }
       return res.status(401).json({ error: "Invalid PIN" });
     }
 
@@ -77,6 +136,7 @@ export default async function handler(req, res) {
       user = { id: data.user_id, workspace_id: data.workspace_id, name, role: "CEO" };
     }
 
+    clearFails(tKey);
     const token = signSession({ userId: user.id, workspaceId: user.workspace_id });
     setSessionCookie(res, token);
     return res.status(200).json({
