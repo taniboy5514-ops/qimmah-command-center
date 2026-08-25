@@ -7,6 +7,8 @@
 import { requireAuth } from "../../backend/lib/auth.js";
 import { runSquadCycle } from "../../backend/lib/cycle.js";
 
+export const maxDuration = 30;
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const session = requireAuth(req, res);

@@ -3,13 +3,17 @@
  * Vercel dynamic-segment consolidation of:
  *   /api/cron/squad-cycle    -> squadCycleHandler
  *   /api/cron/goal-processor -> goalProcessorHandler
- * vercel.json "crons" still point at the original paths — unchanged.
+ * There are no vercel.json "crons" entries — schedule these endpoints with an
+ * external pinger (e.g. cron-job.org) hitting /api/cron/<job> with
+ * `Authorization: Bearer ${CRON_SECRET}`. Both GET and POST are accepted.
  * Handler logic is preserved verbatim from the original route files.
  */
 
+export const maxDuration = 60;
+
 /**
  * api/cron/squad-cycle.js
- * GET — Vercel Cron entrypoint (see vercel.json "crons").
+ * GET or POST — cron entrypoint (external pinger; no vercel.json crons).
  * Guarded by `Authorization: Bearer ${CRON_SECRET}`.
  * Runs the squad cycle for every workspace.
  */
@@ -18,7 +22,7 @@ import { runSquadCycle } from "../../backend/lib/cycle.js";
 import { processActiveGoals } from "../../backend/lib/ceo/goals.js";
 
 async function squadCycleHandler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const secret = process.env.CRON_SECRET;
   if (!secret) return res.status(500).json({ error: "CRON_SECRET is not configured" });
@@ -49,12 +53,12 @@ async function squadCycleHandler(req, res) {
 
 /**
  * api/cron/goal-processor.js
- * GET — Vercel Cron entrypoint (see vercel.json "crons").
+ * GET or POST — cron entrypoint (external pinger; no vercel.json crons).
  * Guarded by `Authorization: Bearer ${CRON_SECRET}`.
  * Advances every active goal in every workspace (processActiveGoals).
  */
 async function goalProcessorHandler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const secret = process.env.CRON_SECRET;
   if (!secret) return res.status(500).json({ error: "CRON_SECRET is not configured" });
