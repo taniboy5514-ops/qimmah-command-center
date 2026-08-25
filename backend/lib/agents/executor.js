@@ -57,19 +57,47 @@ function validateParams(tool, args) {
   return problems;
 }
 
-/** Look for an existing approved approval for this agent+tool+args hash. */
-async function findPreApproval(workspaceId, agentId, toolName) {
+/** Stable stringify with sorted object keys (jsonb does not preserve key order). */
+function stableStringify(value) {
+  if (value === null || value === undefined || typeof value !== "object") {
+    return JSON.stringify(value === undefined ? null : value);
+  }
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
+/**
+ * Look for an existing approved approval for this agent+tool whose stored
+ * args match the current args exactly. Approvals are bound to the args, so an
+ * approval for one call can never unlock a different call to the same tool.
+ */
+async function findPreApproval(workspaceId, agentId, toolName, args) {
   try {
     const db = assertSupabase();
     const { data, error } = await db.from("tool_approvals")
-      .select("id").eq("workspace_id", workspaceId).eq("agent_id", agentId)
+      .select("id, args").eq("workspace_id", workspaceId).eq("agent_id", agentId)
       .eq("tool_name", toolName).eq("status", "approved")
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (error) return null;
-    return data;
+      .order("created_at", { ascending: false }).limit(20);
+    if (error || !data) return null;
+    const wanted = stableStringify(args || {});
+    return data.find((row) => stableStringify(row.args || {}) === wanted) || null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Consume a used approval row (approvals are single-use): delete it after a
+ * successful execution. The status check constraint
+ * ('pending','approved','rejected') has no 'consumed' state, so deletion is
+ * the safe marker. Best-effort — a failure only leaves a stale approved row.
+ */
+async function consumePreApproval(approvalId) {
+  try {
+    const db = assertSupabase();
+    await db.from("tool_approvals").delete().eq("id", approvalId);
+  } catch { /* best effort */ }
 }
 
 /** Create a pending approval row and return its id (or null if table missing). */
@@ -128,10 +156,11 @@ export async function executeTool(toolName, args = {}, context = {}, opts = {}) 
   const rl = checkRateLimit(context.agentId, tool);
   if (!rl.ok) return fail(`Rate limit exceeded for ${toolName} — retry in ${Math.ceil(rl.retryAfterMs / 1000)}s`);
 
-  // Gate 5: approval
+  // Gate 5: approval (bound to the exact args; single-use)
+  let preApproval = null;
   if (tool.requiresApproval && !opts.skipApprovalCheck) {
-    const pre = await findPreApproval(context.workspaceId, context.agentId, toolName);
-    if (!pre) {
+    preApproval = await findPreApproval(context.workspaceId, context.agentId, toolName, args);
+    if (!preApproval) {
       const approvalId = await createPendingApproval(context, toolName, args);
       return {
         ...base, success: false, approvalRequired: true, approvalId,
@@ -155,6 +184,7 @@ export async function executeTool(toolName, args = {}, context = {}, opts = {}) 
       cost: tool.costEstimate || 0, latency_ms: latencyMs,
       cycle_id: context.cycleId || null, approval_id: opts.approvalId || null,
     });
+    if (preApproval) await consumePreApproval(preApproval.id);
     return {
       ...base, success: true, result, cost: tool.costEstimate || 0, latencyMs,
     };

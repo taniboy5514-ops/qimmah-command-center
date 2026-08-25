@@ -82,6 +82,11 @@ async function approveHandler(req, res) {
       result = await executeTool(approval.tool_name, approval.args || {}, context,
         { skipApprovalCheck: true, approvalId });
       executed = result.success;
+      if (executed) {
+        // Single-use: consume the approval row so it cannot unlock a replay
+        // of the same tool call from the executor's pre-approval check.
+        await db.from("tool_approvals").delete().eq("id", approvalId);
+      }
     }
 
     return res.status(200).json({ decision, executed, ...(result ? { result } : {}) });
