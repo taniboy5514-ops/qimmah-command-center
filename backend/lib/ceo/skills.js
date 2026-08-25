@@ -53,7 +53,7 @@ export const BUILTIN_SKILLS = [
     keywords: ["follow up", "follow-up", "followup", "nudge", "warm lead", "check in", "re-engage"],
     promptTemplate: "Goal: follow up with every warm lead — review the pipeline and send nudges.",
     steps: [
-      { title: "Review pipeline status", squad: "Alpha", tool_name: "query_analytics", tool_args: { metric: "leads" } },
+      { title: "Review pipeline status", squad: "Gamma", tool_name: "query_analytics", tool_args: { metric: "leads" } },
       { title: "Send follow-up WhatsApp messages", squad: "Alpha", tool_name: "send_whatsapp_message", needs_approval: true, tool_args: { to: "96891763555", message: "Follow-up regarding: {{prompt}}" } },
     ],
   },
