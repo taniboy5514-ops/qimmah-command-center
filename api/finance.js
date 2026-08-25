@@ -108,6 +108,16 @@ export default async function handler(req, res) {
       if (!invoiceId || !allowed.includes(status)) {
         return res.status(400).json({ error: "invoice_id and a valid status are required" });
       }
+      // Read the current status first so the income transaction below is only
+      // recorded on the transition INTO "paid" (not on repeat PATCHes).
+      const { data: current, error: curErr } = await db.from("invoices")
+        .select("status")
+        .eq("id", invoiceId)
+        .eq("workspace_id", ws)
+        .maybeSingle();
+      if (curErr) return res.status(500).json({ error: curErr.message });
+      if (!current) return res.status(404).json({ error: "Invoice not found" });
+
       const { data: invoice, error: updErr } = await db.from("invoices")
         .update({ status })
         .eq("id", invoiceId)
@@ -117,7 +127,7 @@ export default async function handler(req, res) {
       if (updErr) return res.status(500).json({ error: updErr.message });
       if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
-      if (status === "paid") {
+      if (status === "paid" && current.status !== "paid") {
         const total = (invoice.invoice_items || []).reduce(
           (s, it) => s + Number(it.qty) * Number(it.unit_price), 0);
         if (total > 0) {
