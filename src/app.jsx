@@ -65,6 +65,23 @@ function Shell({ children }) {
 /* ============================================================
    LOGIN — owner setup, PIN sign-in, accountability
    ============================================================ */
+/* Backend session bridge — after a successful LOCAL PIN check we also
+   register the session with the backend (POST sets the httpOnly
+   qimmah_session cookie; DELETE clears it). Pure plumbing: every failure
+   path degrades to local-only mode and never blocks sign-in. */
+async function backendPinLogin(name, pin) {
+  try {
+    const res = await fetch("/api/auth/pin-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: String(name || "").trim(), pin: String(pin || "") }),
+    });
+    return res.ok; // 200 → cookie set; 4xx/5xx → stay local-only
+  } catch (e) {
+    return false; // no backend deployed / network down → local-only
+  }
+}
+
 function AuthCard({ children }) {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -89,7 +106,7 @@ function CreateOwner({ onCreate }) {
     if (!n) { setErr("Enter your name."); return; }
     if (!/^\d{4,8}$/.test(pin)) { setErr("PIN must be 4–8 digits."); return; }
     if (pin !== pin2) { setErr("PINs don't match."); return; }
-    onCreate({ id: uid(), name: n, pin: pinHash(pin), role: "owner", created: Date.now() });
+    onCreate({ id: uid(), name: n, pin: pinHash(pin), role: "owner", created: Date.now() }, pin);
   }
   return (
     <AuthCard>
@@ -117,7 +134,7 @@ function Login({ users, onLogin }) {
   const [err, setErr] = useState("");
   function submit() {
     if (!sel) return;
-    if (pinHash(pin) === sel.pin) onLogin(sel);
+    if (pinHash(pin) === sel.pin) onLogin(sel, pin);
     else { setErr("Wrong PIN. Try again."); setPin(""); }
   }
   return (
@@ -279,6 +296,24 @@ function App() {
     return () => { alive = false; window.removeEventListener("resize", onResize); };
   }, []);
 
+  /* Silent backend reconnect — runs once per app load. The local sign-in
+     lives in memory only, but the httpOnly qimmah_session cookie survives
+     reloads (30d), so a returning user with a valid cookie is reconnected
+     without typing the PIN again. Never blocks anything. */
+  useEffect(() => {
+    if (!S || !S.users || S.users.length === 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/pin-login"); // GET = session check
+        if (!alive) return;
+        if (res.ok) up({ backendOn: true });
+      } catch (e) { /* no backend reachable — local-only mode */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!S]);
+
   useEffect(() => {
     if (!S) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -344,9 +379,15 @@ function App() {
   if (S.users.length === 0) {
     return (
       <Shell>
-        <CreateOwner onCreate={(owner) => {
+        <CreateOwner onCreate={(owner, pin) => {
           setS((s) => ({ ...s, users: [owner], feed: [{ id: uid(), type: "system", text: "Owner account created: " + owner.name, ts: Date.now(), by: owner.name }, ...s.feed] }));
           setUser(owner);
+          /* Register the new account with the backend too (auto-provisions the
+             workspace). Failure = local-only mode, never blocks the owner. */
+          if (pin) backendPinLogin(owner.name, pin).then((ok) => {
+            up({ backendOn: ok });
+            if (ok) log("system", "Backend session connected — approvals, goals and the MCP log are live");
+          });
         }} />
       </Shell>
     );
@@ -355,9 +396,16 @@ function App() {
   if (!user) {
     return (
       <Shell>
-        <Login users={S.users} onLogin={(u) => {
+        <Login users={S.users} onLogin={(u, pin) => {
           setUser(u);
           setS((s) => ({ ...s, feed: [{ id: uid(), type: "system", text: u.name + " signed in", ts: Date.now(), by: u.name }, ...s.feed].slice(0, 100) }));
+          /* Backend bridge: after the local PIN check passes, also open the
+             server session (sets the httpOnly qimmah_session cookie). Any
+             failure keeps the app in local-only mode exactly as before. */
+          if (pin) backendPinLogin(u.name, pin).then((ok) => {
+            up({ backendOn: ok });
+            if (ok) log("system", "Backend session connected — approvals, goals and the MCP log are live");
+          });
         }} />
       </Shell>
     );
@@ -433,6 +481,11 @@ function App() {
               <b>{user.name}</b>
               <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: user.role === "owner" ? "#FBBF24" : "#8B86A3" }}>{user.role}</span>
             </span>
+            {S.backendOn === false && (
+              <span style={{ fontSize: 11, color: "#6B6685" }} title="The backend API didn't answer — approvals, goals and the MCP log stay hidden. Everything local keeps working.">
+                offline mode — backend not connected
+              </span>
+            )}
             {user.role === "owner" && <button style={btnGhost} onClick={() => setShowTeam(!showTeam)}><Users size={13} /> Team</button>}
             {user.role === "owner" && <BackupControls S={S} onExport={exportBackup} onImport={importBackup} />}
             {user.role === "owner" && (
@@ -441,7 +494,13 @@ function App() {
                 <Download size={13} /> Export Brain
               </button>
             )}
-            <button style={btnGhost} onClick={() => { log("system", user.name + " signed out"); setUser(null); setShowTeam(false); setView("overview"); }}>Sign out</button>
+            <button style={btnGhost} onClick={() => {
+              log("system", user.name + " signed out");
+              /* Clear the server session too (pin-login supports DELETE). */
+              try { fetch("/api/auth/pin-login", { method: "DELETE" }).catch(() => {}); } catch (e) { /* no backend — nothing to clear */ }
+              up({ backendOn: false });
+              setUser(null); setShowTeam(false); setView("overview");
+            }}>Sign out</button>
           </div>
           {showTeam && user.role === "owner" && <TeamPanel S={S} up={up} log={log} user={user} onClose={() => setShowTeam(false)} />}
           {views[view]}
