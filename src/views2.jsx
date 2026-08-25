@@ -232,7 +232,7 @@ export function Finance({ S, up, log }) {
     const rec = { id: uid(), desc: tx.desc.trim(), amount, type: tx.type, date: new Date().toISOString().slice(0, 10) };
     up((s) => ({ ...s, transactions: [rec, ...s.transactions] }));
     log("finance", (tx.type === "income" ? "Income" : "Expense") + " recorded: " + omr(amount) + " — " + tx.desc.slice(0, 40));
-    setTx({ desc: "", amount: "", type: "income" });
+    setTx({ desc: "", amount: "", type: tx.type });
   }
   function addInv() {
     const amount = Number(inv.amount);
@@ -672,7 +672,7 @@ export function Leads({ S, up, log }) {
                   </button>
                 </div>
                 {l.message && <div style={{ fontSize: 12.5, color: "#C9C4DC", lineHeight: 1.55, marginBottom: 8 }}>{l.message}</div>}
-                <div style={{ fontSize: 10.5, color: "#6B6685", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>{l.source} · {timeAgo(l.ts)}</div>}
+                <div style={{ fontSize: 10.5, color: "#6B6685", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>{l.source} · {timeAgo(l.ts)}</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                   {isPhone(l.contact) && (
                     <a href={"https://wa.me/" + l.contact.replace(/[^0-9]/g, "")} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}>

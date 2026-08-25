@@ -131,7 +131,7 @@ function Login({ users, onLogin }) {
               ...(sel && sel.id === u.id ? { background: "rgba(124,58,237,0.25)", borderColor: PURPLE, color: "#F5F3FF" } : {}),
             }}>
             <span style={{ fontWeight: 600 }}>{u.name}</span>
-            <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: u.role === "owner" ? "#FBBF24" : "#8B86A3" }}>{u.role}</span>
+            <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: u.role === "owner" ? "#FBBF24" : "#8B86A3" }}>{u.role}</span>
           </button>
         ))}
       </div>
