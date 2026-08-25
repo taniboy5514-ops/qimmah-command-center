@@ -5,9 +5,10 @@
    its own methods (meta-learning) and upgrades its checklist.
    ============================================================ */
 import { useState, useEffect } from "react";
-import { Award, Download, Play, Power, Zap, FileText, Users, Brain, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Award, Download, Play, Power, Zap, FileText, Users, Brain, ChevronDown, ChevronUp, Trash2, Eye } from "lucide-react";
 import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, omr, timeAgo, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
 import { downloadFile } from "./views3.jsx";
+import { DeliverablePreview } from "./preview.jsx";
 
 export const SQUADS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
 
@@ -311,7 +312,7 @@ export function resultMarkdown(r) {
     Object.entries(r.directives).forEach(([sq, d]) => { md += "- **Squad " + sq + ":** " + d + "\n"; });
     md += "\n";
   }
-  if (r.crossInsights && r.crossInsights.length) {
+  if (r.crossInsights && r.crossInsights.length > 0) {
     md += "## Cross-squad insights\n";
     r.crossInsights.forEach((i) => { md += "- " + i + "\n"; });
     md += "\n";
@@ -345,8 +346,9 @@ export function deliverableMime(fname) {
   return "text/plain";
 }
 
-function ResultCard({ r, up, log }) {
+function ResultCard({ r, up, log, S }) {
   const [open, setOpen] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const ts = TYPE_STYLE[r.type] || TYPE_STYLE.study;
   const squadColor = SQUAD_META[r.squad] ? SQUAD_META[r.squad].color : "#A78BFA";
   return (
@@ -357,6 +359,11 @@ function ResultCard({ r, up, log }) {
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: squadColor + "22", color: squadColor, border: "1px solid " + squadColor + "55", textTransform: "uppercase", letterSpacing: 1 }}>Squad {r.squad}</span>
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: ts.c + "22", color: ts.c, border: "1px solid " + ts.c + "55", textTransform: "uppercase", letterSpacing: 1 }}>{ts.label}</span>
             {r.offline && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "rgba(255,255,255,0.06)", color: "#8B86A3", border: "1px solid rgba(255,255,255,0.12)" }}>offline</span>}
+            {r.published && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.35)", letterSpacing: 0.5 }} title={"Live at /" + r.published}>
+                ● published
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: "#F5F3FF", lineHeight: 1.4 }}>{r.topic}</div>
           <div style={{ fontSize: 10.5, color: "#6B6685", marginTop: 3, textTransform: "uppercase", letterSpacing: 1 }}>{r.hour} · {r.agent} · {timeAgo(r.ts)}</div>
@@ -431,7 +438,12 @@ function ResultCard({ r, up, log }) {
           )}
           <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
             {r.content && (
-              <button style={btnPrimary} onClick={(e) => { e.stopPropagation(); try { downloadFile(r.filename || "deliverable.md", r.content, deliverableMime(r.filename)); log("system", "Deliverable downloaded: " + String(r.filename || "").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
+              <button style={btnPrimary} onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
+                <Eye size={13} /> Preview
+              </button>
+            )}
+            {r.content && (
+              <button style={btnGhost} onClick={(e) => { e.stopPropagation(); try { downloadFile(r.filename || "deliverable.md", r.content, deliverableMime(r.filename)); log("system", "Deliverable downloaded: " + String(r.filename || "").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
                 <Download size={13} /> Download {r.filename}
               </button>
             )}
@@ -440,6 +452,9 @@ function ResultCard({ r, up, log }) {
             </button>
           </div>
         </div>
+      )}
+      {showPreview && (
+        <DeliverablePreview d={r} S={S} up={up} log={log} onClose={() => setShowPreview(false)} />
       )}
     </Card>
   );
@@ -533,7 +548,7 @@ export function Results({ S, up, log, onRunNow, running }) {
                 <Trash2 size={11} /> Clear
               </button>
             </div>
-            {results.map((r) => <ResultCard key={r.id} r={r} up={up} log={log} />)}
+            {results.map((r) => <ResultCard key={r.id} r={r} up={up} log={log} S={S} />)}
           </div>}
     </div>
   );

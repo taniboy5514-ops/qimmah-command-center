@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, ListTodo, Plus, ChevronLeft, ChevronRight, Trash2
 import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Field, glass, inputStyle, btnPrimary, btnGhost, uid, omr, timeAgo, lastMonths, REVENUE_TARGET, COLS, IN_PREVIEW, TOOL_CATALOG } from "./shared.jsx";
 import { SquadCyclePanel, SquadDirectiveCards, FleetActivity } from "./squadcycle.jsx";
 import { useRunnerStatus } from "./taskrunner.jsx";
+import { DeliverablePreview } from "./preview.jsx";
 /* ============================================================
    SQUAD TOOLKIT — static mirror of the MCP registry
    (TOOL_CATALOG in shared.jsx). Green = runs automatically,
@@ -110,9 +111,11 @@ export function Tasks({ S, up, log }) {
   const [title, setTitle] = useState("");
   const [prio, setPrio] = useState("Medium");
   const [agentId, setAgentId] = useState("");
+  const [previewId, setPreviewId] = useState(null); // resultId of the deliverable open in the preview modal
   const runner = useRunnerStatus();
   const runnerOn = S.runnerOn !== false;
   const openCount = S.tasks.filter((t) => t.col === "Backlog" || t.col === "In Progress").length;
+  const previewResult = previewId ? (S.results || []).find((r) => r.id === previewId) : null;
 
   function addTask() {
     const t = title.trim();
@@ -182,13 +185,23 @@ export function Tasks({ S, up, log }) {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {S.tasks.filter((t) => t.col === col).map((t) => {
                     const agent = t.agentId ? AGENTS.find((a) => a.id === t.agentId) : null;
+                    const result = t.resultId ? (S.results || []).find((r) => r.id === t.resultId) : null;
                     return (
                       <div key={t.id} style={{ background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontSize: 13, color: "#E9E4FB", marginBottom: 6, lineHeight: 1.4 }}>{t.title}</div>
                         {t.resultId && (
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(34,211,238,0.12)", color: "#22D3EE", border: "1px solid rgba(34,211,238,0.35)", marginBottom: 6 }}
-                            title="The agent's finished deliverable is saved in the Results tab">
-                            📦 deliverable in Results
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                            <button onClick={() => result && setPreviewId(t.resultId)} disabled={!result}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(34,211,238,0.12)", color: "#22D3EE", border: "1px solid rgba(34,211,238,0.35)", cursor: result ? "pointer" : "default", fontFamily: "inherit" }}
+                              title={result ? "Open the deliverable preview — see the file without downloading" : "The agent's deliverable was cleared from Results"}>
+                              📦 {result ? "View deliverable" : "deliverable in Results"}
+                            </button>
+                            {result && result.published && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.35)" }}
+                                title={"Live at /" + result.published}>
+                                ● published
+                              </span>
+                            )}
                           </div>
                         )}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -207,6 +220,9 @@ export function Tasks({ S, up, log }) {
               </div>
             ))}
           </div>}
+      {previewResult && (
+        <DeliverablePreview d={previewResult} S={S} up={up} log={log} onClose={() => setPreviewId(null)} />
+      )}
     </div>
   );
 }
@@ -229,7 +245,7 @@ export function Finance({ S, up, log }) {
   function addTx() {
     const amount = Number(tx.amount);
     if (!tx.desc.trim() || !amount || amount <= 0) return;
-    const rec = { id: uid(), desc: tx.desc.trim(), amount, type: tx.type, date: new Date().toISOString().slice(0, 10) };
+    const rec = { id: uid(), desc: tx.desc.trim(), amount, type: "income", date: new Date().toISOString().slice(0, 10) };
     up((s) => ({ ...s, transactions: [rec, ...s.transactions] }));
     log("finance", (tx.type === "income" ? "Income" : "Expense") + " recorded: " + omr(amount) + " — " + tx.desc.slice(0, 40));
     setTx({ desc: "", amount: "", type: tx.type });
@@ -299,7 +315,7 @@ export function Finance({ S, up, log }) {
                   <option value="expense" style={{ background: "#1a1327" }}>Expense</option>
                 </select>
               </Field>
-              <button style={btnPrimary} onClick={addTx}><Plus size={15} /> Record</button>
+              <button style={btnPrimary} onClick={addTx}><Plus size={14} /> Record</button>
             </div>
           </Card>
           {S.transactions.length === 0
@@ -327,7 +343,7 @@ export function Finance({ S, up, log }) {
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
               <Field label="Client"><input style={inputStyle} placeholder="e.g. Army Burger" value={inv.client} onChange={(e) => setInv({ ...inv, client: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") addInv(); }} /></Field>
               <Field label="Amount (OMR)"><input style={inputStyle} type="number" min="0" placeholder="0" value={inv.amount} onChange={(e) => setInv({ ...inv, amount: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") addInv(); }} /></Field>
-              <button style={btnPrimary} onClick={addInv}><Plus size={15} /> Draft invoice</button>
+              <button style={btnPrimary} onClick={addInv}><Plus size={14} /> Draft invoice</button>
             </div>
           </Card>
           {S.invoices.length === 0
