@@ -3,13 +3,14 @@
    HTML deliverables render live in a sandboxed iframe (scripts
    run, but isolated) with a Preview | Code toggle; Markdown and
    text render as a clean readable view via a tiny dependency-free
-   renderer. Footer: Download / Copy / Close.
+   renderer. Footer: Download / Copy / Publish (HTML → /published) / Close.
    ============================================================ */
 import { useState, useEffect } from "react";
-import { X, Download, Copy, Check, Eye, Code2 } from "lucide-react";
+import { X, Download, Copy, Check, Eye, Code2, Globe } from "lucide-react";
 import { CYAN, SQUAD_META, btnPrimary, btnGhost } from "./shared.jsx";
 import { downloadFile } from "./views3.jsx";
 import { deliverableMime } from "./autopilot.jsx";
+import { getFileSha, commitFiles } from "./github-sync.js";
 
 /* Never feed more than ~1MB into an iframe srcDoc or the DOM. */
 export const MAX_PREVIEW_CHARS = 1024 * 1024;
@@ -20,6 +21,14 @@ export function isHtmlDeliverable(d) {
   if (f.endsWith(".html") || f.endsWith(".htm")) return true;
   const head = String((d && d.content) || "").trimStart().slice(0, 200).toLowerCase();
   return head.startsWith("<!doctype") || head.startsWith("<html");
+}
+
+/* URL slug for publishing: from the filename (preferred) or the title,
+   lowercase-hyphenated, filesystem-safe. */
+export function deliverableSlug(d) {
+  const base = String((d && (d.filename || d.title || d.topic)) || "deliverable").replace(/\.[a-z0-9]+$/i, "");
+  const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return slug || "deliverable-" + String((d && d.id) || "file");
 }
 
 /* ---------- Tiny markdown renderer (no dependencies) ---------- */
@@ -113,11 +122,21 @@ export function renderMarkdown(src) {
 export function DeliverablePreview({ d, S, up, log, onClose }) {
   const html = isHtmlDeliverable(d);
   const [mode, setMode] = useState("preview"); // html only: preview | code
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
+  const [pub, setPub] = useState({ phase: "idle", msg: "" }); // publish flow state
+  const [noGh, setNoGh] = useState(false);
   const content = String(d.content || "");
   const tooBig = content.length > MAX_PREVIEW_CHARS;
   const squadColor = SQUAD_META[d.squad] ? SQUAD_META[d.squad].color : "#A78BFA";
   const date = d.ts ? new Date(d.ts).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+  /* Publish target: public/published/<slug>.html in the repo is served by
+     Vite/Vercel at /published/<slug>.html after the redeploy. */
+  const slug = deliverableSlug(d);
+  const publicPath = "published/" + slug + ".html";
+  const livePath = d.published || publicPath;
+  const liveUrl = (typeof window !== "undefined" ? window.location.origin : "") + "/" + livePath;
+  const published = pub.phase === "done" || !!d.published;
 
   /* Escape closes; listener lives only while the modal is open. */
   useEffect(() => {
@@ -126,18 +145,40 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function copyContent() {
-    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
+  function copyText(text, tag) {
+    const done = () => { setCopied(tag); setTimeout(() => setCopied(""), 1600); };
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(content).then(done, () => done());
+        navigator.clipboard.writeText(text).then(done, () => done());
       } else {
         const ta = document.createElement("textarea");
-        ta.value = content; document.body.appendChild(ta); ta.select();
+        ta.value = text; document.body.appendChild(ta); ta.select();
         try { document.execCommand("copy"); } catch (e) { /* copy unavailable */ }
         document.body.removeChild(ta); done();
       }
     } catch (e) { done(); }
+  }
+
+  /* Kimi-style publish: commit the HTML to public/published/<slug>.html on
+     main; Vercel picks up the commit and serves it at /published/<slug>.html.
+     Republishing the same slug updates the file (getFileSha → commitFiles).
+     The token is only sent to api.github.com and is never logged. */
+  async function publish() {
+    const gh = { owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...((S && S.github) || {}) };
+    if (!gh.token) { setNoGh(true); return; }
+    setNoGh(false);
+    setPub({ phase: "working", msg: "" });
+    const conn = { ...gh, token: gh.token.trim() };
+    const repoPath = "public/" + publicPath;
+    try {
+      const existing = await getFileSha(conn, repoPath); // sha of the file if this slug was published before
+      await commitFiles(conn, "publish: " + String(d.title || d.topic || slug).slice(0, 80) + " (deliverable)", [{ path: repoPath, content }]);
+      if (up) up((s) => ({ ...s, results: (s.results || []).map((r) => (r.id === d.id ? { ...r, published: publicPath } : r)) }));
+      if (log) log("system", "Deliverable " + (existing.sha ? "republished" : "published") + ": /" + publicPath);
+      setPub({ phase: "done", msg: existing.sha ? "updated" : "created" });
+    } catch (e) {
+      setPub({ phase: "error", msg: (e && e.message) || "Publish failed. Try again." });
+    }
   }
 
   return (
@@ -197,15 +238,45 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
           )}
         </div>
 
+        {/* Publish status — success / no-GitHub note / error */}
+        {published && (
+          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.35)", fontSize: 12.5, color: "#9FE8C4", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, color: "#34D399" }}>● Published{pub.msg === "updated" ? " (updated)" : ""}</span>
+            <span>Live at /{livePath} in ~2 min (after Vercel redeploys)</span>
+            <input readOnly value={liveUrl} onFocus={(e) => e.target.select()}
+              style={{ flex: 1, minWidth: 200, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#C9F5E0", padding: "5px 9px", fontSize: 11.5, fontFamily: "ui-monospace, monospace", outline: "none" }} />
+            <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 11.5 }} onClick={() => copyText(liveUrl, "url")}>
+              {copied === "url" ? <Check size={12} style={{ color: "#34D399" }} /> : <Copy size={12} />} {copied === "url" ? "Copied" : "Copy link"}
+            </button>
+          </div>
+        )}
+        {noGh && (
+          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 12.5, color: "#FDE68A" }}>
+            Connect GitHub in Integrations Hub to publish — open the “GitHub — self-edit” card, paste a token (Contents: Read and write) and tap Test connection.
+          </div>
+        )}
+        {pub.phase === "error" && (
+          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12.5, color: "#FCA5A5" }}>{pub.msg}</div>
+        )}
+
         {/* Footer */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <button style={btnPrimary}
             onClick={() => { try { downloadFile(d.filename || "deliverable.md", content, deliverableMime(d.filename)); if (log) log("system", "Deliverable downloaded: " + String(d.filename || "").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
             <Download size={13} /> Download
           </button>
-          <button style={btnGhost} onClick={copyContent}>
-            {copied ? <Check size={13} style={{ color: "#34D399" }} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
+          <button style={btnGhost} onClick={() => copyText(content, "content")}>
+            {copied === "content" ? <Check size={13} style={{ color: "#34D399" }} /> : <Copy size={13} />} {copied === "content" ? "Copied" : "Copy"}
           </button>
+          {html && !tooBig && (
+            <button
+              style={{ ...btnPrimary, background: "linear-gradient(135deg, #059669, #047857)", boxShadow: "0 0 18px rgba(5,150,105,0.35)", opacity: pub.phase === "working" ? 0.6 : 1 }}
+              disabled={pub.phase === "working"}
+              title={published ? "Publish the current content again (updates the same URL)" : "Commit this file to the repo — it goes live at /" + publicPath + " after Vercel redeploys"}
+              onClick={publish}>
+              <Globe size={13} /> {pub.phase === "working" ? "Publishing…" : published ? "Republish" : "Publish"}
+            </button>
+          )}
           <span style={{ flex: 1 }} />
           <button style={btnGhost} onClick={onClose}>Close</button>
         </div>
