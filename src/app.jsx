@@ -76,9 +76,33 @@ async function backendPinLogin(name, pin) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: String(name || "").trim(), pin: String(pin || "") }),
     });
-    return res.ok; // 200 → cookie set; 4xx/5xx → stay local-only
+    if (res.ok) return { ok: true };
+    let reason = "server error " + res.status;
+    try { const j = await res.json(); if (j && j.error) reason = String(j.error).slice(0, 140); } catch (e) { /* non-JSON body */ }
+    return { ok: false, reason };
   } catch (e) {
-    return false; // no backend deployed / network down → local-only
+    return { ok: false, reason: "unreachable" }; // no backend deployed / network down → local-only
+  }
+}
+
+/* After a failed login/session check, ask the backend self-diagnostic
+   WHY it is down so the offline banner can name the exact fix. Returns
+   a short human sentence (or "" when the API itself is unreachable). */
+async function probeBackendWhy() {
+  try {
+    const res = await fetch("/api/mcp/health");
+    if (!res.ok) return "the API answered " + res.status + " — check the Vercel deployment logs";
+    const h = await res.json();
+    const missing = Object.entries(h.env || {}).filter(([, v]) => !v).map(([k]) => k);
+    if (missing.length) return "missing in Vercel env: " + missing.join(", ") + " (Settings → Environment Variables, then redeploy)";
+    if (h.supabase && !h.supabase.reachable) return "Supabase is set but unreachable: " + String(h.supabase.error || "connection failed").slice(0, 120);
+    if (h.supabase && h.supabase.tables) {
+      const gone = Object.entries(h.supabase.tables).filter(([, v]) => !v).map(([k]) => k);
+      if (gone.length) return "Supabase tables missing: " + gone.join(", ") + " — run the schema SQL files in the Supabase SQL editor";
+    }
+    return "";
+  } catch (e) {
+    return ""; // API itself unreachable (bot protection, deploy down) — keep the generic note
   }
 }
 
@@ -384,9 +408,14 @@ function App() {
           setUser(owner);
           /* Register the new account with the backend too (auto-provisions the
              workspace). Failure = local-only mode, never blocks the owner. */
-          if (pin) backendPinLogin(owner.name, pin).then((ok) => {
-            up({ backendOn: ok });
-            if (ok) log("system", "Backend session connected — approvals, goals and the MCP log are live");
+          if (pin) backendPinLogin(owner.name, pin).then(async (r) => {
+            if (r.ok) {
+              up({ backendOn: true, backendWhy: "" });
+              log("system", "Backend session connected — approvals, goals and the MCP log are live");
+            } else {
+              const why = r.reason && r.reason !== "unreachable" ? r.reason : await probeBackendWhy();
+              up({ backendOn: false, backendWhy: why || "" });
+            }
           });
         }} />
       </Shell>
@@ -402,9 +431,14 @@ function App() {
           /* Backend bridge: after the local PIN check passes, also open the
              server session (sets the httpOnly qimmah_session cookie). Any
              failure keeps the app in local-only mode exactly as before. */
-          if (pin) backendPinLogin(u.name, pin).then((ok) => {
-            up({ backendOn: ok });
-            if (ok) log("system", "Backend session connected — approvals, goals and the MCP log are live");
+          if (pin) backendPinLogin(u.name, pin).then(async (r) => {
+            if (r.ok) {
+              up({ backendOn: true, backendWhy: "" });
+              log("system", "Backend session connected — approvals, goals and the MCP log are live");
+            } else {
+              const why = r.reason && r.reason !== "unreachable" ? r.reason : await probeBackendWhy();
+              up({ backendOn: false, backendWhy: why || "" });
+            }
           });
         }} />
       </Shell>

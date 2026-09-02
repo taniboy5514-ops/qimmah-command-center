@@ -165,6 +165,44 @@ async function executionsHandler(req, res) {
   }
 }
 
+/**
+ * api/mcp/health.js (consolidated)
+ * GET — public backend self-diagnostic. Answers "why is the app in
+ * offline mode?" without leaking anything sensitive: env vars are
+ * reported as booleans only, and table checks are name + reachable.
+ * The app calls this whenever pin-login fails so the offline banner
+ * can name the exact missing piece.
+ */
+async function healthHandler(req, res) {
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  const env = {
+    SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
+    SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    JWT_SECRET: Boolean(process.env.JWT_SECRET),
+    GROQ_API_KEY: Boolean(process.env.GROQ_API_KEY),
+  };
+  const supa = { configured: Boolean(supabase), reachable: false, error: null, tables: null };
+  if (supabase) {
+    try {
+      const { error } = await supabase.from("users").select("id").limit(1);
+      if (error) {
+        supa.error = error.message;
+      } else {
+        supa.reachable = true;
+        supa.tables = {};
+        for (const t of ["users", "workspaces", "agents", "tool_executions", "tool_approvals"]) {
+          const { error: te } = await supabase.from(t).select("id").limit(1);
+          supa.tables[t] = !te;
+        }
+      }
+    } catch (e) {
+      supa.error = e.message || "connection failed";
+    }
+  }
+  const ok = env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY && env.JWT_SECRET && supa.reachable;
+  return res.status(200).json({ ok, env, supabase: supa, ts: new Date().toISOString() });
+}
+
 export default async function handler(req, res) {
   const action = Array.isArray(req.query.action) ? req.query.action[0] : req.query.action;
   switch (action) {
@@ -174,6 +212,8 @@ export default async function handler(req, res) {
       return discoverHandler(req, res);
     case "executions":
       return executionsHandler(req, res);
+    case "health":
+      return healthHandler(req, res);
     default:
       return res.status(404).json({ error: "Not found" });
   }
