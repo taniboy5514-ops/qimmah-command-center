@@ -3,6 +3,7 @@ import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2,
 import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls, TOOL_CATALOG, MCP_LIMITS_NOTE } from "./shared.jsx";
 import { testGhConnection } from "./github-sync.js";
 import { resultMarkdown } from "./autopilot.jsx";
+import { PluginsPanel } from "./plugins.jsx";
 /* ============================================================
    ANALYTICS — computed entirely from real entries
    ============================================================ */
@@ -1070,6 +1071,7 @@ export function Integrations({ S, up, log }) {
       <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: PURPLE, marginBottom: 12 }}>Credentials vault</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 18 }}>
 
+        <div id="vault-whatsapp">
         <Card>
           {vaultCardTitle("#25D366", <Send size={14} />, "WhatsApp Business API", <VaultStatus ok={waConfigured} />)}
           <p style={guideStyle}>
@@ -1115,6 +1117,9 @@ export function Integrations({ S, up, log }) {
           </div>
         </Card>
 
+        </div>
+
+        <div id="vault-github">
         <Card>
           {vaultCardTitle("#E9E4FB", <Github size={14} />, "GitHub — self-edit", <VaultStatus ok={Boolean(gh.token && gh.connectedAt)} okText="Connected ✓" />)}
           <p style={guideStyle}>
@@ -1138,6 +1143,7 @@ export function Integrations({ S, up, log }) {
             {deviceNote}
           </div>
         </Card>
+        </div>
       </div>
 
       <DMGhostwriter S={S} up={up} log={log} />

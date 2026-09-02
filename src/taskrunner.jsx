@@ -77,7 +77,8 @@ function runnerSys(agent) {
     + "DELIVERABLE MODE: Produce the COMPLETE finished artifact for this task — the full copy deck, the full outreach script, the full plan, the full code — ready to use as-is. No placeholders, no 'TODO', no describing the work — the finished work itself. Bilingual (Arabic + English) where it helps the Omani market.\n"
     + "End your reply with a fenced json block exactly like:\n"
     + "```json\n{\"title\":\"short deliverable title\",\"filename\":\"kebab-case-name.md\",\"content\":\"the COMPLETE file content\"}\n```\n"
-    + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON.").slice(0, 2000);
+    + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON."
+    + agentToolkitNote(agent)).slice(0, 3600);
 }
 
 /* Pull {title, filename, content} out of the model reply; fall back to
