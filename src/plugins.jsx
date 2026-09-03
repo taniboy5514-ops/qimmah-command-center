@@ -128,6 +128,26 @@ export function toolkitFor(agent) {
   return { tools: SQUAD_DEFAULT_TOOLS[agent.squad] || ["deliver_work"], fmt: "md", note: "Do the complete work and hand in the finished file." };
 }
 
+/* ---------- Design training — the 5 sources every design agent studies FIRST ----------
+   Taught to all agents that deliver visual work (html/svg). Design from
+   evidence, not vibes. */
+export const DESIGN_SOURCES = [
+  { name: "Refero", url: "styles.refero.design", what: "2,000+ real DESIGN.md systems from leading sites — colors, typography, spacing, component rules" },
+  { name: "Mobbin", url: "mobbin.com", what: "1,400+ real apps & sites, 620k+ screens, 320k+ user flows — proven patterns (onboarding, checkout, paywalls)" },
+  { name: "SupaHero", url: "supahero.io", what: "Curated hero-section library — how top sites structure the first screen (headline, CTA, hierarchy)" },
+  { name: "21st.dev", url: "21st.dev", what: "10,000+ production React/Tailwind component patterns — navbars, pricing, forms, built by design engineers" },
+  { name: "Motion", url: "motion.dev", what: "Free MIT animation library (springs, scroll effects, gestures) — apply its patterns as GPU-friendly CSS transform/opacity transitions" },
+];
+
+export function designTrainingNote(agent) {
+  const tk = toolkitFor(agent);
+  if (tk.fmt !== "html" && tk.fmt !== "svg") return "";
+  return "\n\nDESIGN TRAINING — study these sources FIRST, before any visual work:\n"
+    + DESIGN_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
+    + "\nRULES: Pick ONE reference system per job and follow its palette/type/spacing. Copy the SYSTEM, never clone the site."
+    + " Use proven patterns from these libraries instead of inventing layouts. Name the pattern you applied in your handoff note.";
+}
+
 /* Prompt snippet injected by the Task Runner — tells the agent exactly
    which tools it owns and how to make the work REAL. */
 export function agentToolkitNote(agent) {
@@ -143,6 +163,7 @@ export function agentToolkitNote(agent) {
       : "Your filename should end in .md — clean markdown the CEO can read and reuse.";
   return "\n\nYOUR TOOLKIT — you are the specialist; use these to make the work REAL:\n" + lines
     + "\nWorking style: " + tk.note
+    + designTrainingNote(agent)
     + "\nDELIVERABLE FORMAT: " + fmtLine;
 }
 
@@ -231,6 +252,28 @@ export const PLUGIN_CATALOG = [
     about: "Live documentation lookup for the frameworks this app is built on — keeps code work accurate.",
     steps: ["Ask the Web Developer agent for code — it researches current docs first"],
     powers: "Web Developer, AI Prompt Engineer", tools: ["web_search", "study_topic"] },
+
+  /* ---- Design training library (free external sources — taught to all design agents) ---- */
+  { id: "refero", name: "Refero DESIGN.md", icon: "🎨", tint: "#A78BFA", tagline: "2,000+ AI-readable design systems from real sites", cats: ["Creativity & 3D", "Developer Tools", "Featured"], kind: "free",
+    about: "Every leading website distilled into a DESIGN.md: exact colors, typography, spacing rhythm, component rules. Agents design from evidence, not vibes — paste a reference system, then build.",
+    steps: ["Already taught to all design agents — they study it before any visual work", "Browse styles.refero.design to pick a style yourself"],
+    powers: "UI/UX Designer, Web Developer, Graphic Designer, Landing Pages", tools: ["study_topic", "web_search", "deliver_work"] },
+  { id: "mobbin", name: "Mobbin", icon: "📱", tint: "#34D399", tagline: "1,400+ real apps · 620k screens · 320k flows", cats: ["Creativity & 3D", "Research"], kind: "free",
+    about: "The world's largest UI/UX reference library. Real screens and complete user flows from top apps — onboarding, checkout, paywalls, profiles. Agents study proven patterns instead of inventing layouts.",
+    steps: ["Taught to design agents as their pattern library", "Free plan at mobbin.com — browse the latest apps"],
+    powers: "UI/UX Designer, App Developer, Web Developer", tools: ["web_search", "study_topic"] },
+  { id: "supahero", name: "SupaHero", icon: "🦸", tint: "#FBBF24", tagline: "Curated hero sections from top websites", cats: ["Creativity & 3D"], kind: "free",
+    about: "A handpicked library of stunning website hero sections. The first screen decides if a visitor stays — agents study how the best sites structure headline, CTA and visual hierarchy.",
+    steps: ["Taught to Landing Pages + Web Developer agents", "Browse supahero.io for hero inspiration"],
+    powers: "Landing Pages, Web Developer, UI/UX Designer", tools: ["web_search", "deliver_work"] },
+  { id: "twentyfirst", name: "21st.dev Components", icon: "🧱", tint: "#60A5FA", tagline: "10,000+ production UI component patterns", cats: ["Developer Tools", "Creativity & 3D"], kind: "free",
+    about: "The 'npm for design engineers' — community-built React/Tailwind components (navbars, pricing, forms, heroes) with AI-ready prompts. Agents build with proven component patterns, not from scratch.",
+    steps: ["Taught to Web Developer + UI/UX agents", "Browse 21st.dev — 2 free component copies daily"],
+    powers: "Web Developer, UI/UX Designer, App Developer", tools: ["deliver_work", "web_search"] },
+  { id: "motion", name: "Motion Animations", icon: "✨", tint: "#F472B6", tagline: "Free MIT animation library — springs, scroll, gestures", cats: ["Creativity & 3D", "Developer Tools"], kind: "free",
+    about: "Production-grade animation (formerly Framer Motion), trusted by Framer and Figma. 430+ copy-paste examples. Agents apply its patterns as GPU-friendly CSS transform/opacity transitions in single-file pages.",
+    steps: ["Taught to all design agents — animate with transform/opacity only", "Docs + examples at motion.dev"],
+    powers: "Web Developer, UI/UX Designer, Video Editor", tools: ["deliver_work", "web_search"] },
 
   /* ---- Coming soon (honest: needs OAuth we haven't built yet) ---- */
   { id: "composio", name: "Composio (500+ apps)", icon: "🧩", tint: "#F97316", tagline: "One key → Gmail, Notion, Slack, 500 more", cats: ["Featured", "Developer Tools"], kind: "soon",
