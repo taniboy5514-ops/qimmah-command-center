@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
-import { CheckCircle2, Circle, ListTodo, Plus, ChevronLeft, ChevronRight, Trash2, Wallet, FileText, Paperclip, Download, ExternalLink, Inbox, RefreshCw, Settings, Send } from "lucide-react";
+import { CheckCircle2, Circle, ListTodo, Plus, ChevronLeft, ChevronRight, Trash2, Wallet, FileText, Paperclip, Download, ExternalLink, Inbox, RefreshCw, Settings, Send, Phone, Wrench } from "lucide-react";
 import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Field, glass, inputStyle, btnPrimary, btnGhost, uid, omr, timeAgo, lastMonths, REVENUE_TARGET, COLS, IN_PREVIEW, TOOL_CATALOG } from "./shared.jsx";
+import { toolkitFor, TOOL_DEFS } from "./plugins.jsx";
 import { SquadCyclePanel, SquadDirectiveCards, FleetActivity } from "./squadcycle.jsx";
 import { useRunnerStatus } from "./taskrunner.jsx";
 import { DeliverablePreview } from "./preview.jsx";
@@ -93,7 +94,31 @@ export function Agents({ S, up, log, squadRunning, squadPhase, onRunSquadNow }) 
                 </button>
               </div>
               <div style={{ fontSize: 13.5, fontWeight: 600, color: "#E9E4FB", marginBottom: 3 }}>{a.name}</div>
-              <div style={{ fontSize: 11, color: "#8B86A3" }}>Squad {a.squad} · {m.role}</div>
+              <div style={{ fontSize: 11, color: "#8B86A3", marginBottom: 8 }}>Squad {a.squad} · {m.role}</div>
+              {(() => {
+                const tk = toolkitFor(a);
+                const shownTools = tk.tools.slice(0, 4);
+                return (
+                  <div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+                      {shownTools.map((id) => (
+                        <span key={id} title={(TOOL_DEFS[id] || {}).use || id}
+                          style={{ fontSize: 9.5, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: "rgba(6,182,212,0.1)", color: CYAN, border: "1px solid rgba(6,182,212,0.25)", whiteSpace: "nowrap" }}>
+                          {(TOOL_DEFS[id] || {}).label || id}
+                        </span>
+                      ))}
+                      {tk.tools.length > 4 && (
+                        <span style={{ fontSize: 9.5, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: "rgba(124,58,237,0.12)", color: "#C4B5FD", border: "1px solid rgba(124,58,237,0.3)" }}>
+                          +{tk.tools.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#6B6685", display: "flex", alignItems: "center", gap: 4 }}>
+                      <Wrench size={10} /> {tk.tools.length} tools · delivers .{tk.fmt}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -690,6 +715,11 @@ export function Leads({ S, up, log }) {
                 {l.message && <div style={{ fontSize: 12.5, color: "#C9C4DC", lineHeight: 1.55, marginBottom: 8 }}>{l.message}</div>}
                 <div style={{ fontSize: 10.5, color: "#6B6685", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>{l.source} · {timeAgo(l.ts)}</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  {isPhone(l.contact) && (
+                    <a href={"tel:+" + l.contact.replace(/[^0-9]/g, "")} style={{ ...btnGhost, fontSize: 12, textDecoration: "none", color: "#34D399", borderColor: "rgba(52,211,153,0.35)" }}>
+                      <Phone size={12} /> Call
+                    </a>
+                  )}
                   {isPhone(l.contact) && (
                     <a href={"https://wa.me/" + l.contact.replace(/[^0-9]/g, "")} target="_blank" rel="noreferrer" style={{ ...btnGhost, fontSize: 12, textDecoration: "none" }}>
                       <Send size={12} /> WhatsApp

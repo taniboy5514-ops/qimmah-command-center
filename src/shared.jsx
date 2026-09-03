@@ -154,6 +154,13 @@ export function buildSnapshot(S) {
     websiteLeads: {
       newCount: (S.leads || []).filter((l) => l.status === "New").length,
       recent: (S.leads || []).filter((l) => l.status === "New").slice(0, 5).map((l) => ({ name: l.name, contact: l.contact, note: (l.message || "").slice(0, 80) })),
+      // FULL pipeline — the whole fleet works from the same real leads list
+      pipeline: (S.leads || []).slice(0, 15).map((l) => ({
+        name: String(l.name || "Lead").slice(0, 60),
+        contact: String(l.contact || "").slice(0, 40),
+        status: l.status || "New",
+        note: String(l.message || "").slice(0, 100),
+      })),
     },
   };
 }

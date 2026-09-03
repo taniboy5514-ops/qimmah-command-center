@@ -177,10 +177,17 @@ export function TaskRunner({ S, up, log }) {
 
           /* EXECUTE — the agent produces the complete deliverable. */
           const sys = runnerSys(agent);
+          const liveLeads = (s.leads || []).slice(0, 8);
+          const leadsBlock = liveLeads.length > 0
+            ? "\n\nLIVE LEADS PIPELINE (real saved leads — use these names/numbers, never invent contacts):\n"
+              + liveLeads.map((l) => "- " + String(l.name || "Lead").slice(0, 50) + " · " + String(l.contact || "").slice(0, 30)
+                + " · " + (l.status || "New") + (l.message ? " — " + String(l.message).slice(0, 80) : "")).join("\n")
+            : "";
           const brief = "TASK: " + candidate.title + "\nPriority: " + (candidate.prio || "Medium")
             + (candidate.note ? "\nNotes from the CEO: " + String(candidate.note).slice(0, 400) : "")
+            + leadsBlock
             + "\n\nProduce the complete deliverable now.";
-          const raw = await aiCall(s, sys, [{ role: "user", content: brief.slice(0, 2000) }]);
+          const raw = await aiCall(s, sys, [{ role: "user", content: brief.slice(0, 3200) }]);
           const d = parseDeliverable(raw, candidate.title);
           const resultId = uid();
           const hour = new Date().toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit" });
