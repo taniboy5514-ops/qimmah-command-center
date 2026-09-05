@@ -148,6 +148,23 @@ export function designTrainingNote(agent) {
     + " Use proven patterns from these libraries instead of inventing layouts. Name the pattern you applied in your handoff note.";
 }
 
+/* ---------- AI security reference — taught to security-adjacent agents ----------
+   The AI Security Hub repo (github.com/sonuoffsec/AI-Security-Hub) is the
+   fleet's reference base for LLM / MCP / RAG / agent security: payloads,
+   cheat sheets, labs. Agents study it before security work. */
+export const SECURITY_SOURCES = [
+  { name: "AI Security Hub", url: "github.com/sonuoffsec/AI-Security-Hub", what: "Prompt-injection payloads, LLM/RAG/MCP/agent security cheat sheets, hands-on labs and CTFs" },
+];
+
+const SECURITY_TRAINED_AGENTS = ["Security Auditor", "Tech Researcher", "Integration Specialist", "AI Prompt Engineer"];
+
+export function securityTrainingNote(agent) {
+  if (!SECURITY_TRAINED_AGENTS.includes(agent.name)) return "";
+  return "\n\nAI SECURITY REFERENCE — consult this source before any AI-security work:\n"
+    + SECURITY_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
+    + "\nRULES: Ground findings in published payload categories and cheat sheets. Cite the category you checked against in your findings list.";
+}
+
 /* Prompt snippet injected by the Task Runner — tells the agent exactly
    which tools it owns and how to make the work REAL. */
 export function agentToolkitNote(agent) {
@@ -164,6 +181,7 @@ export function agentToolkitNote(agent) {
   return "\n\nYOUR TOOLKIT — you are the specialist; use these to make the work REAL:\n" + lines
     + "\nWorking style: " + tk.note
     + designTrainingNote(agent)
+    + securityTrainingNote(agent)
     + "\nDELIVERABLE FORMAT: " + fmtLine;
 }
 
@@ -252,6 +270,10 @@ export const PLUGIN_CATALOG = [
     about: "Live documentation lookup for the frameworks this app is built on — keeps code work accurate.",
     steps: ["Ask the Web Developer agent for code — it researches current docs first"],
     powers: "Web Developer, AI Prompt Engineer", tools: ["web_search", "study_topic"] },
+  { id: "ai-security-hub", name: "AI Security Hub", icon: "🛡️", tint: "#F43F5E", tagline: "LLM · MCP · RAG · agent security payloads & cheat sheets", cats: ["Research", "Developer Tools", "Featured"], kind: "free",
+    about: "A curated open-source knowledge base for AI security — prompt-injection payloads, LLM/RAG/MCP/agent security cheat sheets, hands-on labs and CTF challenges (github.com/sonuoffsec/AI-Security-Hub). The Security Auditor, Tech Researcher and AI Prompt Engineer are trained to consult it before any AI-security work.",
+    steps: ["Already taught to the security-adjacent agents — they consult it before audits", "Ask the CEO: 'study the AI Security Hub repo' — the brief lands in the knowledge base", "Browse github.com/sonuoffsec/AI-Security-Hub for the raw payloads, labs and cheat sheets"],
+    powers: "Security Auditor, Tech Researcher, AI Prompt Engineer, Integration Specialist", tools: ["web_search", "study_topic", "deliver_work"] },
 
   /* ---- Design training library (free external sources — taught to all design agents) ---- */
   { id: "refero", name: "Refero DESIGN.md", icon: "🎨", tint: "#A78BFA", tagline: "2,000+ AI-readable design systems from real sites", cats: ["Creativity & 3D", "Developer Tools", "Featured"], kind: "free",
