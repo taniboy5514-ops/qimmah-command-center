@@ -9,6 +9,7 @@
    ============================================================ */
 import { useEffect, useRef, useState } from "react";
 import { AGENTS, SQUAD_META, aiCall, uid, fleetChatMsg, CHAT_CAP, IN_PREVIEW, glass } from "./shared.jsx";
+import { agentToolkitNote } from "./plugins.jsx";
 
 const TICK_MS = 20000;          // pipeline tick
 const FIRST_TICK_MS = 3000;     // quick start after mount
