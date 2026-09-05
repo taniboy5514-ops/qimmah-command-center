@@ -145,7 +145,8 @@ export function designTrainingNote(agent) {
   return "\n\nDESIGN TRAINING — study these sources FIRST, before any visual work:\n"
     + DESIGN_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
     + "\nRULES: Pick ONE reference system per job and follow its palette/type/spacing. Copy the SYSTEM, never clone the site."
-    + " Use proven patterns from these libraries instead of inventing layouts. Name the pattern you applied in your handoff note.";
+    + " Use proven patterns from these libraries instead of inventing layouts. Name the pattern you applied in your handoff note."
+    + " DIAGRAMS: when the deliverable includes an architecture, flow, funnel or process diagram, deliver it as Mermaid code or clean hand-built SVG (Diagram Design repo patterns) — editorial quality, never ASCII art.";
 }
 
 /* ---------- AI security reference — taught to security-adjacent agents ----------
@@ -154,15 +155,16 @@ export function designTrainingNote(agent) {
    cheat sheets, labs. Agents study it before security work. */
 export const SECURITY_SOURCES = [
   { name: "AI Security Hub", url: "github.com/sonuoffsec/AI-Security-Hub", what: "Prompt-injection payloads, LLM/RAG/MCP/agent security cheat sheets, hands-on labs and CTFs" },
+  { name: "Anthropic Cybersecurity Skills", url: "github.com/mukul975/Anthropic-Cybersecurity-Skills", what: "818 production-grade security skills mapped to MITRE ATT&CK, NIST CSF 2.0, ATLAS, D3FEND and AI RMF" },
 ];
 
 const SECURITY_TRAINED_AGENTS = ["Security Auditor", "Tech Researcher", "Integration Specialist", "AI Prompt Engineer"];
 
 export function securityTrainingNote(agent) {
   if (!SECURITY_TRAINED_AGENTS.includes(agent.name)) return "";
-  return "\n\nAI SECURITY REFERENCE — consult this source before any AI-security work:\n"
+  return "\n\nAI SECURITY REFERENCE — consult these sources before any AI-security work:\n"
     + SECURITY_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
-    + "\nRULES: Ground findings in published payload categories and cheat sheets. Cite the category you checked against in your findings list.";
+    + "\nRULES: Ground findings in published payload categories, frameworks and cheat sheets. Cite the category or framework (e.g. MITRE ATT&CK technique, NIST CSF function) you checked against in your findings list.";
 }
 
 /* Prompt snippet injected by the Task Runner — tells the agent exactly
@@ -274,6 +276,38 @@ export const PLUGIN_CATALOG = [
     about: "A curated open-source knowledge base for AI security — prompt-injection payloads, LLM/RAG/MCP/agent security cheat sheets, hands-on labs and CTF challenges (github.com/sonuoffsec/AI-Security-Hub). The Security Auditor, Tech Researcher and AI Prompt Engineer are trained to consult it before any AI-security work.",
     steps: ["Already taught to the security-adjacent agents — they consult it before audits", "Ask the CEO: 'study the AI Security Hub repo' — the brief lands in the knowledge base", "Browse github.com/sonuoffsec/AI-Security-Hub for the raw payloads, labs and cheat sheets"],
     powers: "Security Auditor, Tech Researcher, AI Prompt Engineer, Integration Specialist", tools: ["web_search", "study_topic", "deliver_work"] },
+
+  /* ---- Agent arsenal — the 7 GitHub repos that save months of agent building.
+     Each card is honest: what the Command Center already covers natively,
+     and what genuinely needs an external runtime. ---- */
+  { id: "browser-use", name: "Browser Use", icon: "🌐", tint: "#38BDF8", tagline: "AI agent that drives a real browser — clicks, forms, workflows", cats: ["Developer Tools", "Featured"], kind: "free",
+    about: "browser-use/browser-use lets an agent open a real browser, click elements, fill forms and run multi-step web workflows. Honest limit: it needs a Python runtime, so it can't run inside this static web app — the Command Center's equivalent today is Groq Compound live web research + approval-gated sending. Real browser automation is the strongest candidate for the future backend.",
+    steps: ["Covered today: Study Mode + agents research the live web via Groq Compound", "True browser control needs a server — on the backend roadmap (Supabase + worker)", "Browse github.com/browser-use/browser-use for the framework"],
+    powers: "Web Developer, Integration Specialist (when the backend lands)", tools: ["web_search", "study_topic"] },
+  { id: "agent-memory", name: "Agent Memory", icon: "🧠", tint: "#A78BFA", tagline: "Persistent memory — agents learn every session, never restart", cats: ["Developer Tools"], kind: "free",
+    about: "The 'memory that types back' pattern: episodic + semantic memory so agents improve across sessions. Covered natively: the CEO knowledge base (every Study Mode brief), remember_fact long-term memory, extracted insights, and Export Brain snapshots — the fleet's memory persists on this device and restores from backup.",
+    steps: ["Already native — every study brief, remembered fact and insight persists", "Export Brain = full memory snapshot to disk", "Compare patterns at the agent-memory repos on GitHub"],
+    powers: "AI CEO + all squads", tools: ["remember_fact", "study_topic"] },
+  { id: "scientific-skills", name: "Scientific Agent Skills", icon: "🔬", tint: "#34D399", tagline: "163 ready-made skills · 100+ databases (K-Dense)", cats: ["Research", "Developer Tools"], kind: "free",
+    about: "K-Dense's Scientific Agent Skills — 163 curated skills and 100+ databases on the open Agent Skills standard. The Command Center's equivalents: the 60-agent toolkit, plugin catalog and study_topic research briefs. The repo is the reference for packaging new skills if the fleet ever adopts the standard.",
+    steps: ["Covered today: study_topic + the 60-agent toolkit", "Ask the CEO to study 'Scientific Agent Skills (K-Dense)' for the full pattern review"],
+    powers: "Gamma squad, Training Coordinator", tools: ["study_topic", "web_search"] },
+  { id: "diagram-design", name: "Diagram Design", icon: "📊", tint: "#F472B6", tagline: "Editorial-quality architecture & flow diagrams as code", cats: ["Creativity & 3D", "Developer Tools"], kind: "free",
+    about: "Diagram-as-code patterns for coding agents — clean architecture, flow, funnel and process diagrams instead of ASCII art. Now taught to all design agents: deliver diagrams as Mermaid or hand-built SVG at editorial quality.",
+    steps: ["Already taught to design agents — ask the Web Developer or Graphic Designer for a diagram", "Reference patterns live in the Diagram Design repo"],
+    powers: "Web Developer, Graphic Designer, UI/UX Designer", tools: ["deliver_work", "web_search"] },
+  { id: "cybersec-skills", name: "Cybersecurity Skills ×818", icon: "🔐", tint: "#EF4444", tagline: "818 security skills · MITRE ATT&CK · NIST CSF · ATLAS", cats: ["Developer Tools", "Research"], kind: "free",
+    about: "mukul975/Anthropic-Cybersecurity-Skills — 818 production-grade security skills mapped to MITRE ATT&CK, NIST CSF 2.0, ATLAS, D3FEND, AI RMF and the F3 fraud framework. Added to the security agents' reference base alongside the AI Security Hub — findings cite the framework and technique they checked against.",
+    steps: ["Already taught to Security Auditor + 3 more agents", "Run a Security Auditor task — findings cite MITRE/NIST categories"],
+    powers: "Security Auditor, Tech Researcher, Integration Specialist, AI Prompt Engineer", tools: ["web_search", "study_topic", "deliver_work"] },
+  { id: "harness-engineering", name: "Awesome Harness Engineering", icon: "🧬", tint: "#FBBF24", tagline: "Patterns & templates for reliable agent harnesses", cats: ["Developer Tools"], kind: "free",
+    about: "Curated resources, patterns and templates for building reliable AI agent harnesses — the discipline this Command Center itself is built on (tool registry, approval gates, budgets, honest-status plugins). A reference read for the founder, not a runtime dependency.",
+    steps: ["Ask the CEO to study it — the brief lands in the knowledge base", "Compare its patterns against our MCP tool system and 6-gate executor"],
+    powers: "Integration Specialist, AI Prompt Engineer", tools: ["study_topic"] },
+  { id: "open-viking", name: "Open Viking", icon: "⚔️", tint: "#94A3B8", tagline: "Context database — resources, memory & skills as directories", cats: ["Developer Tools"], kind: "free",
+    about: "Open Viking organizes an agent's context (resources, memory, skills) into browsable directories agents can search. The Command Center's equivalent: buildSnapshot injects live business state into every agent call, and the knowledge base + results feed give the fleet shared context. The repo is the reference if context ever moves to a real database.",
+    steps: ["Covered today: buildSnapshot + knowledge base on every agent call", "Real context database arrives with the Supabase backend"],
+    powers: "Whole fleet (context)", tools: ["query_analytics", "study_topic"] },
 
   /* ---- Design training library (free external sources — taught to all design agents) ---- */
   { id: "refero", name: "Refero DESIGN.md", icon: "🎨", tint: "#A78BFA", tagline: "2,000+ AI-readable design systems from real sites", cats: ["Creativity & 3D", "Developer Tools", "Featured"], kind: "free",
