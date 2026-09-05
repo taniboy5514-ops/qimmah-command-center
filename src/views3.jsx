@@ -324,6 +324,44 @@ export function buildBrainMarkdown(S) {
   return md;
 }
 
+/* ---------- Study Queue — the founder's curriculum ----------
+   One tap = one live Study Mode run on the topics that matter most
+   for Qimmah Digital: websites, sales, marketing, money, the Omani
+   market, AI & security. Studied topics show a ✓; every brief lands
+   in the knowledge base below (review anytime) and in Export Brain. */
+export const STUDY_QUEUE = [
+  { cat: "Websites & Delivery", tint: "#22D3EE", topics: [
+    "High-converting website structure for Omani small businesses — sections, CTAs and WhatsApp integration",
+    "Website pricing in Oman and the GCC 2026 — what agencies charge for landing pages, 5-page sites and e-commerce",
+    "Mobile-first landing pages that turn visitors into WhatsApp inquiries",
+    "Page speed and Core Web Vitals basics that help local businesses rank on Google",
+    "Design systems from Refero and 21st.dev — how top sites use color, typography and spacing",
+    "Shipping client websites fast — a GitHub + Vercel workflow a one-person agency can run",
+  ] },
+  { cat: "Sales & Leads", tint: "#34D399", topics: [
+    "WhatsApp outreach scripts that get replies from Omani business owners",
+    "Cold DM frameworks for Instagram lead generation in the GCC",
+    "Running a discovery call that closes a OMR 400 website deal",
+    "Follow-up cadence for leads — how often to message without being ignored",
+  ] },
+  { cat: "Marketing", tint: "#F472B6", topics: [
+    "Arabic + English SEO keyword strategy for local search in Oman",
+    "Google Business Profile optimization for Omani SMEs",
+    "Short-form video trends for Omani restaurants and cafes 2026",
+    "Meta ads in Oman — audiences, creatives and budgets in OMR that work",
+  ] },
+  { cat: "Money & Business", tint: "#FBBF24", topics: [
+    "Retainer pricing models — packaging monthly marketing at OMR 99 / 250 / 500",
+    "Invoicing and payment collection best practices for Omani freelancers and agencies",
+    "Oman Vision 2040 digital-economy opportunities for small digital agencies",
+  ] },
+  { cat: "AI & Security", tint: "#A78BFA", topics: [
+    "AI Security Hub (sonuoffsec/AI-Security-Hub) — prompt injection and LLM/RAG/agent security basics for agencies shipping AI features",
+    "Running an AI agent fleet on free models — Groq Compound, fallbacks and cost control",
+    "AI tools worth paying for in 2026 — design, copy and video for a lean agency",
+  ] },
+];
+
 export function Study({ S, up, log, user, exportBrain, exportBackup, importBackup }) {
   const [topic, setTopic] = useState("");
   const [busy, setBusy] = useState(false);
@@ -335,8 +373,9 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
   const fleetStudies = (S.results || []).filter((r) => r.type === "study" || r.type === "squad-study" || r.type === "meta");
   const isOwner = user && user.role === "owner";
 
-  async function study() {
-    const t = topic.trim();
+  /* preset = a topic string from the Study Queue; otherwise use the input. */
+  async function study(preset) {
+    const t = String(typeof preset === "string" ? preset : topic).trim();
     if (!t || busy) return;
     setBusy(true); setError("");
     try {
@@ -396,6 +435,12 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
     }
   }
 
+  /* Study Queue helpers — a topic counts as studied when the knowledge base
+     already holds a brief with the same topic text. */
+  const isStudied = (t) => knowledge.some((e) => String(e.topic || "").trim().toLowerCase() === t.trim().toLowerCase());
+  const queueTotal = STUDY_QUEUE.reduce((n, c) => n + c.topics.length, 0);
+  const queueDone = STUDY_QUEUE.reduce((n, c) => n + c.topics.filter(isStudied).length, 0);
+
   if (!S.groqKey && !IN_PREVIEW) {
     return (
       <div>
@@ -423,7 +468,7 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
               value={topic} onChange={(e) => setTopic(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") study(); }} />
           </Field>
-          <button style={btnPrimary} onClick={study} disabled={busy || !topic.trim()}>
+          <button style={btnPrimary} onClick={() => study()} disabled={busy || !topic.trim()}>
             <Brain size={15} /> {busy ? "Studying…" : "Study this"}
           </button>
           {isOwner && (
@@ -438,6 +483,37 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
           The CEO researches the live open web via Groq Compound (web search built in — no extra keys, same free Groq key). If web search is unavailable on your key, it falls back to its trained knowledge and says so. Export Brain downloads two files (JSON backup + readable report). Saved to your Downloads — move it to your Desktop.
         </div>
         {error && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5", fontSize: 13 }}>{error}</div>}
+      </Card>
+
+      {/* STUDY QUEUE — one-tap curriculum of the important things */}
+      <Card style={{ marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#C4B5FD" }}>Study queue · the important things</div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: queueDone === queueTotal ? "#34D399" : "#8B86A3" }}>{queueDone} / {queueTotal} studied</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#8B86A3", marginBottom: 12, lineHeight: 1.6 }}>
+          One tap = one live web study, saved forever in the knowledge base below. Review any brief anytime on this page — or tap Export Brain for a readable report of everything.
+        </div>
+        {STUDY_QUEUE.map((c) => (
+          <div key={c.cat} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: c.tint, marginBottom: 6 }}>{c.cat}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {c.topics.map((t) => {
+                const done = isStudied(t);
+                return (
+                  <button key={t} onClick={() => study(t)} disabled={busy || done}
+                    style={{ ...glass, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", cursor: busy || done ? "default" : "pointer", textAlign: "left", fontFamily: "inherit", opacity: done ? 0.55 : 1 }}>
+                    {done
+                      ? <CheckCircle2 size={15} style={{ color: "#34D399", flexShrink: 0 }} />
+                      : <Brain size={15} style={{ color: c.tint, flexShrink: 0 }} />}
+                    <span style={{ flex: 1, fontSize: 12.5, color: done ? "#8B86A3" : "#E9E4FB", lineHeight: 1.5, textDecoration: done ? "line-through" : "none" }}>{t}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: done ? "#34D399" : c.tint, flexShrink: 0 }}>{done ? "Studied ✓" : busy ? "…" : "Study"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </Card>
 
       {knowledge.length === 0 && fleetStudies.length === 0
