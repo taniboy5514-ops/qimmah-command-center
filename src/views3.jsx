@@ -360,6 +360,15 @@ export const STUDY_QUEUE = [
     "Running an AI agent fleet on free models — Groq Compound, fallbacks and cost control",
     "AI tools worth paying for in 2026 — design, copy and video for a lean agency",
   ] },
+  { cat: "Agent Arsenal — the 7 repos", tint: "#F43F5E", topics: [
+    "Browser Use (github.com/browser-use/browser-use) — AI browser agents that click, fill forms and run web workflows; what it would take to add one to a web agency",
+    "Agent Memory — persistent memory patterns for AI agents (episodic vs semantic memory, memory graphs) and how they compare to a knowledge base",
+    "Scientific Agent Skills by K-Dense — 163 ready-made agent skills and the open Agent Skills standard",
+    "Diagram Design for coding agents — editorial-quality architecture, flow and funnel diagrams delivered as code (Mermaid / SVG)",
+    "Anthropic Cybersecurity Skills (mukul975) — 818 security skills mapped to MITRE ATT&CK, NIST CSF 2.0, ATLAS, D3FEND and AI RMF",
+    "Awesome Harness Engineering — patterns and templates for building reliable AI agent harnesses (tool registries, approval gates, budgets)",
+    "Open Viking — the context database for AI agents; organizing resources, memory and skills as browsable directories",
+  ] },
 ];
 
 export function Study({ S, up, log, user, exportBrain, exportBackup, importBackup }) {
