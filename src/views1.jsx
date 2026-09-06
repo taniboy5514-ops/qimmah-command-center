@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio, Target, X, Plus, Camera, Image, FileUp, Link2, Plug, Flag, ChevronRight } from "lucide-react";
+import { Mic, Send, Copy, Volume2, VolumeX, Trash2, Settings, Sparkles, Check, Download, FileCheck2, Radio, Target, X, Plus, Camera, Image, FileUp, Link2, Plug, Flag, ChevronRight, Eye } from "lucide-react";
 import { PURPLE, CYAN, SQUAD_META, AGENTS, SYSTEM_PROMPT, TOOL_INSTRUCTIONS, buildSnapshot, knowledgeNote, memoryNote, teamNote, pickFemaleVoice, sanitizeHistory, parseActions, describeAction, applyActions, aiCall, classifyInsight, uid, timeAgo, VOICE_IDS, IN_PREVIEW, REVENUE_TARGET, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Field, wantsWork, wantsGoal, SKILL_CATALOG, fleetChatMsg, CHAT_CAP, GROQ_MODELS, GROQ_MODEL_LABELS } from "./shared.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { downloadFile } from "./views3.jsx";
 import { getFileSha, commitFiles } from "./github-sync.js";
+import { WebsiteReview, isHtmlDeliverable } from "./preview.jsx";
 
 /* Self-edit intent — the user is asking to change the Command Center app
    itself (not business work). Requires the GitHub connection in Integrations. */
@@ -14,7 +15,19 @@ const SELF_EDIT_FILES = [
   { path: "src/views1.jsx", what: "AI CEO chat and Settings" },
   { path: "src/views2.jsx", what: "Business views (tasks, finance, leads…)" },
   { path: "src/views3.jsx", what: "Integrations Hub, results, live feed" },
+  { path: "src/preview.jsx", what: "Deliverable preview modal + Qimmah Website Review" },
 ];
+
+/* Website requests get a stricter brief: the fleet must return ONE complete,
+   self-contained HTML file that renders finished in the in-app Website
+   Review — the user never touches code or runs anything elsewhere. */
+const WEBSITE_ASK_RE = /(website|web[- ]?site|web[- ]?page|landing page|homepage|home page|storefront|one[- ]?pager|web app|portfolio site)/i;
+const WEBSITE_BRIEF = "\n\nWEBSITE BRIEF (this request is for a website — follow exactly): "
+  + "Reply with the fenced json block only. filename MUST end in .html and content MUST be ONE complete, self-contained HTML document starting with <!DOCTYPE html>. "
+  + "ALL CSS lives in one <style> tag inside <head>; ALL JavaScript in one <script> tag before </body>. No external files — a Google Fonts <link> is the only allowed external reference. "
+  + "Mobile-first responsive, premium modern design (custom color palette, strong hero, sticky nav, real sections: services or menu, about, testimonials, contact, footer). "
+  + "Write realistic copy in the language the user asked in — never lorem ipsum, never placeholders like 'your image here', never TODO. Use inline SVG or CSS shapes for visuals. "
+  + "It must look FINISHED the moment it opens in a browser — the CEO reviews it live in the full-screen Qimmah Website Review inside the app, not in a code editor.";
 /* ============================================================
    PENDING APPROVALS — MCP approval queue. Polls /api/mcp/approve
    (GET) and renders Approve/Reject. Degrades gracefully: when the
@@ -716,6 +729,7 @@ export function CEOChat({ S, up, log, user, go }) {
   const [showVoice, setShowVoice] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [copied, setCopied] = useState("");
+  const [reviewSite, setReviewSite] = useState(null); // HTML deliverable open in the full-screen Qimmah Website Review
   const [showSkills, setShowSkills] = useState(false);
   const [voiceEngine, setVoiceEngine] = useState(""); // engine that last spoke: ElevenLabs | Neural (free) | Browser voice
   /* "+" connectors menu (Kimi-style) — attachments, links, plugins, skills, goals */
@@ -989,7 +1003,8 @@ export function CEOChat({ S, up, log, user, go }) {
             + "\n\nDELIVERABLE MODE: The delivery fleet (Squad Beta) now produces the COMPLETE finished artifact the user asked for — the full website copy section by section, the full HTML page, the full outreach script, the full proposal, the full plan or the full code. No placeholders, no 'TODO', no talking about the work — the finished work itself, ready to use as-is. "
             + "End your reply with a fenced json block exactly like:\n"
             + "```json\n{\"title\":\"short deliverable title\",\"filename\":\"kebab-case-name.md or .html\",\"content\":\"the COMPLETE file content\"}\n```\n"
-            + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON.";
+            + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON."
+            + (WEBSITE_ASK_RE.test(text) ? WEBSITE_BRIEF : "");
           const dmsgs = [{ role: "user", content: "User request: " + text + "\n\nThe CEO's reply for context: " + reply.slice(0, 900) + "\n\nNow produce the complete deliverable file." }];
           let draw;
           try {
@@ -1002,7 +1017,7 @@ export function CEOChat({ S, up, log, user, go }) {
           const fence = draw.match(/```json\s*([\s\S]*?)```/) || draw.match(/```\s*(\{[\s\S]*?"content"[\s\S]*?\})\s*```/);
           let d = null;
           if (fence) { try { d = JSON.parse(fence[1]); } catch (e) { /* malformed */ } }
-          const content = d && d.content ? String(d.content).slice(0, 60000) : String(draw).slice(0, 60000);
+          const content = d && d.content ? String(d.content).slice(0, 200000) : String(draw).slice(0, 200000);
           const title = String((d && d.title) || ("Deliverable: " + text.slice(0, 60))).slice(0, 100);
           const filename = String((d && d.filename) || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60) || "deliverable.md";
           const hour = new Date().toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -1060,7 +1075,7 @@ export function CEOChat({ S, up, log, user, go }) {
   }
 
   const quicks = [
-    "Build a demo website for a new restaurant client — deliver the file now.",
+    "Build a demo website for a new restaurant client — I want to review it live right here.",
     "Write next month's Army Burger campaign and deliver the copy deck.",
     "Design a logo concept as SVG and hand me the file.",
     "Plan the path from OMR 4,800 to OMR 19,800 monthly.",
@@ -1206,7 +1221,7 @@ export function CEOChat({ S, up, log, user, go }) {
             <div style={{ textAlign: "center", padding: "30px 10px" }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#E9E4FB", marginBottom: 6 }}>Marhaba{user ? ", " + user.name : ""} 👋</div>
               <div style={{ fontSize: 13, color: "#A5A0B8", maxWidth: 400, margin: "0 auto 16px" }}>
-                Your AI CEO is live with 60 agents that work in minutes, not days. Ask for a website, a logo, a campaign or a proposal — and get the real file delivered right here, ready to download. Tap the mic and speak, or pick a starter below.
+                Your AI CEO is live with 60 agents that work in minutes, not days. Ask for a website, a logo, a campaign or a proposal — and get the real file delivered right here. Websites open instantly in a full-screen Qimmah-branded review — nothing to download, nothing to run somewhere else. Tap the mic and speak, or pick a starter below.
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
                 {quicks.map((q) => (
@@ -1249,6 +1264,13 @@ export function CEOChat({ S, up, log, user, go }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#F5F3FF", marginBottom: 2 }}>{m.deliverable.title}</div>
                   <div style={{ fontSize: 11, color: "#8B86A3", marginBottom: 8 }}>{m.deliverable.filename} · saved in the Results tab</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {isHtmlDeliverable(m.deliverable) && (
+                      <button style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12.5, background: "linear-gradient(135deg,#06B6D4,#7C3AED)", boxShadow: "0 0 16px rgba(6,182,212,0.35)" }}
+                        title="Open the full-screen Qimmah Website Review — see the site live, right here"
+                        onClick={() => setReviewSite(m.deliverable)}>
+                        <Eye size={13} /> Review website
+                      </button>
+                    )}
                     <button style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12.5 }}
                       onClick={() => { try { downloadFile(m.deliverable.filename, m.deliverable.content, deliverableMime(m.deliverable.filename)); log("system", "Deliverable downloaded: " + m.deliverable.filename); } catch (err) { /* download unavailable */ } }}>
                       <Download size={13} /> Download {m.deliverable.filename}
@@ -1482,6 +1504,9 @@ export function CEOChat({ S, up, log, user, go }) {
         </Card>
       </div>
       </div>
+      {reviewSite && (
+        <WebsiteReview d={reviewSite} S={S} up={up} log={log} onClose={() => setReviewSite(null)} />
+      )}
     </div>
   );
 }
