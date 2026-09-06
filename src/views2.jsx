@@ -4,7 +4,7 @@ import { PURPLE, CYAN, AGENTS, SQUAD_META, Card, SectionTitle, Stat, Empty, Fiel
 import { toolkitFor, TOOL_DEFS } from "./plugins.jsx";
 import { SquadCyclePanel, SquadDirectiveCards, FleetActivity } from "./squadcycle.jsx";
 import { useRunnerStatus } from "./taskrunner.jsx";
-import { DeliverablePreview } from "./preview.jsx";
+import { DeliverablePreview, WebsiteReview, isHtmlDeliverable } from "./preview.jsx";
 /* ============================================================
    SQUAD TOOLKIT — static mirror of the MCP registry
    (TOOL_CATALOG in shared.jsx). Green = runs automatically,
@@ -219,7 +219,7 @@ export function Tasks({ S, up, log }) {
                             <button onClick={() => result && setPreviewId(t.resultId)} disabled={!result}
                               style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(34,211,238,0.12)", color: "#22D3EE", border: "1px solid rgba(34,211,238,0.35)", cursor: result ? "pointer" : "default", fontFamily: "inherit" }}
                               title={result ? "Open the deliverable preview — see the file without downloading" : "The agent's deliverable was cleared from Results"}>
-                              📦 {result ? "View deliverable" : "deliverable in Results"}
+                              {result ? (isHtmlDeliverable(result) ? "🖥️ Review website" : "📦 View deliverable") : "📦 deliverable in Results"}
                             </button>
                             {result && result.published && (
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: 0.5, padding: "2px 8px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.35)" }}
@@ -245,8 +245,9 @@ export function Tasks({ S, up, log }) {
               </div>
             ))}
           </div>}
-      {previewResult && (
-        <DeliverablePreview d={previewResult} S={S} up={up} log={log} onClose={() => setPreviewId(null)} />
+      {previewResult && (isHtmlDeliverable(previewResult)
+        ? <WebsiteReview d={previewResult} S={S} up={up} log={log} onClose={() => setPreviewId(null)} />
+        : <DeliverablePreview d={previewResult} S={S} up={up} log={log} onClose={() => setPreviewId(null)} />
       )}
     </div>
   );
