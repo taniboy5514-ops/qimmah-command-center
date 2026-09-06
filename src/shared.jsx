@@ -572,6 +572,24 @@ export const btnGhost = {
   alignItems: "center", gap: 6, fontFamily: "inherit",
 };
 
+/* Qimmah brand mark — the gradient "Q" tile, used wherever the brand shows
+   (Website Review chrome, share cards). Pure SVG, no asset files. */
+export function QimmahMark({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-label="Qimmah">
+      <defs>
+        <linearGradient id="qimmah-mark-g" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#7C3AED" />
+          <stop offset="1" stopColor="#06B6D4" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="13" fill="url(#qimmah-mark-g)" />
+      <circle cx="22.5" cy="22.5" r="9.5" stroke="#fff" strokeWidth="3.4" fill="none" />
+      <line x1="28.5" y1="29" x2="35.5" y2="36" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 /* ---------- Atoms ---------- */
 export function Card({ children, style, glow }) {
   return (
