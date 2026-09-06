@@ -1,13 +1,16 @@
 /* ============================================================
-   DELIVERABLE PREVIEW — full-screen modal for work products.
-   HTML deliverables render live in a sandboxed iframe (scripts
-   run, but isolated) with a Preview | Code toggle; Markdown and
-   text render as a clean readable view via a tiny dependency-free
-   renderer. Footer: Download / Copy / Publish (HTML → /published) / Close.
+   DELIVERABLE PREVIEW + WEBSITE REVIEW.
+   DeliverablePreview: centered modal for any work product — HTML
+   renders live in a sandboxed iframe, markdown/text via a tiny
+   dependency-free renderer.
+   WebsiteReview: the full-screen, QIMMAH-branded way to review a
+   website the fleet just built — live mobile/desktop preview under
+   a branded chrome bar. No code to copy, nothing to run elsewhere.
+   Both share the publish flow: HTML → /published/<slug>.html.
    ============================================================ */
 import { useState, useEffect } from "react";
-import { X, Download, Copy, Check, Eye, Code2, Globe } from "lucide-react";
-import { CYAN, SQUAD_META, btnPrimary, btnGhost } from "./shared.jsx";
+import { X, Download, Copy, Check, Eye, Code2, Globe, Monitor, Smartphone, RotateCw, ExternalLink } from "lucide-react";
+import { CYAN, SQUAD_META, btnPrimary, btnGhost, QimmahMark } from "./shared.jsx";
 import { downloadFile } from "./views3.jsx";
 import { deliverableMime } from "./autopilot.jsx";
 import { getFileSha, commitFiles } from "./github-sync.js";
@@ -118,33 +121,9 @@ export function renderMarkdown(src) {
   return blocks;
 }
 
-/* ---------- Modal ---------- */
-export function DeliverablePreview({ d, S, up, log, onClose }) {
-  const html = isHtmlDeliverable(d);
-  const [mode, setMode] = useState("preview"); // html only: preview | code
+/* ---------- Shared hooks: clipboard + publish ---------- */
+function useCopyText() {
   const [copied, setCopied] = useState("");
-  const [pub, setPub] = useState({ phase: "idle", msg: "" }); // publish flow state
-  const [noGh, setNoGh] = useState(false);
-  const content = String(d.content || "");
-  const tooBig = content.length > MAX_PREVIEW_CHARS;
-  const squadColor = SQUAD_META[d.squad] ? SQUAD_META[d.squad].color : "#A78BFA";
-  const date = d.ts ? new Date(d.ts).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-
-  /* Publish target: public/published/<slug>.html in the repo is served by
-     Vite/Vercel at /published/<slug>.html after the redeploy. */
-  const slug = deliverableSlug(d);
-  const publicPath = "published/" + slug + ".html";
-  const livePath = d.published || publicPath;
-  const liveUrl = (typeof window !== "undefined" ? window.location.origin : "") + "/" + livePath;
-  const published = pub.phase === "done" || !!d.published;
-
-  /* Escape closes; listener lives only while the modal is open. */
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   function copyText(text, tag) {
     const done = () => { setCopied(tag); setTimeout(() => setCopied(""), 1600); };
     try {
@@ -158,11 +137,23 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
       }
     } catch (e) { done(); }
   }
+  return { copied, copyText };
+}
 
-  /* Kimi-style publish: commit the HTML to public/published/<slug>.html on
-     main; Vercel picks up the commit and serves it at /published/<slug>.html.
-     Republishing the same slug updates the file (getFileSha → commitFiles).
-     The token is only sent to api.github.com and is never logged. */
+/* Kimi-style publish: commit the HTML to public/published/<slug>.html on
+   main; Vercel picks up the commit and serves it at /published/<slug>.html.
+   Republishing the same slug updates the file (getFileSha → commitFiles).
+   The token is only sent to api.github.com and is never logged. */
+function useDeliverablePublish(d, S, up, log) {
+  const [pub, setPub] = useState({ phase: "idle", msg: "" }); // publish flow state
+  const [noGh, setNoGh] = useState(false);
+  const content = String((d && d.content) || "");
+  const slug = deliverableSlug(d);
+  const publicPath = "published/" + slug + ".html";
+  const livePath = d.published || publicPath;
+  const liveUrl = (typeof window !== "undefined" ? window.location.origin : "") + "/" + livePath;
+  const published = pub.phase === "done" || !!d.published;
+
   async function publish() {
     const gh = { owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...((S && S.github) || {}) };
     if (!gh.token) { setNoGh(true); return; }
@@ -180,6 +171,53 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
       setPub({ phase: "error", msg: (e && e.message) || "Publish failed. Try again." });
     }
   }
+  return { pub, noGh, published, livePath, liveUrl, publicPath, publish };
+}
+
+/* Publish status block shared by both viewers. */
+function PublishStatus({ d, pub, noGh, published, livePath, liveUrl, copied, copyText, compact }) {
+  return (
+    <>
+      {published && (
+        <div style={{ margin: compact ? 0 : "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.35)", fontSize: 12.5, color: "#9FE8C4", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 700, color: "#34D399" }}>● Published{pub.msg === "updated" ? " (updated)" : ""}</span>
+          <span>Live at /{livePath} in ~2 min (after Vercel redeploys)</span>
+          <input readOnly value={liveUrl} onFocus={(e) => e.target.select()}
+            style={{ flex: 1, minWidth: 180, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#C9F5E0", padding: "5px 9px", fontSize: 11.5, fontFamily: "ui-monospace, monospace", outline: "none" }} />
+          <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 11.5 }} onClick={() => copyText(liveUrl, "url")}>
+            {copied === "url" ? <Check size={12} style={{ color: "#34D399" }} /> : <Copy size={12} />} {copied === "url" ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      )}
+      {noGh && (
+        <div style={{ margin: compact ? 0 : "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 12.5, color: "#FDE68A" }}>
+          Connect GitHub in Integrations Hub to publish — open the “GitHub — self-edit” card, paste a token (Contents: Read and write) and tap Test connection.
+        </div>
+      )}
+      {pub.phase === "error" && (
+        <div style={{ margin: compact ? 0 : "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12.5, color: "#FCA5A5" }}>{pub.msg}</div>
+      )}
+    </>
+  );
+}
+
+/* ---------- Modal (any deliverable) ---------- */
+export function DeliverablePreview({ d, S, up, log, onClose }) {
+  const html = isHtmlDeliverable(d);
+  const [mode, setMode] = useState("preview"); // html only: preview | code
+  const { copied, copyText } = useCopyText();
+  const { pub, noGh, published, livePath, liveUrl, publicPath, publish } = useDeliverablePublish(d, S, up, log);
+  const content = String(d.content || "");
+  const tooBig = content.length > MAX_PREVIEW_CHARS;
+  const squadColor = SQUAD_META[d.squad] ? SQUAD_META[d.squad].color : "#A78BFA";
+  const date = d.ts ? new Date(d.ts).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+  /* Escape closes; listener lives only while the modal is open. */
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
     <div onClick={onClose}
@@ -239,25 +277,7 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
         </div>
 
         {/* Publish status — success / no-GitHub note / error */}
-        {published && (
-          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.35)", fontSize: 12.5, color: "#9FE8C4", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, color: "#34D399" }}>● Published{pub.msg === "updated" ? " (updated)" : ""}</span>
-            <span>Live at /{livePath} in ~2 min (after Vercel redeploys)</span>
-            <input readOnly value={liveUrl} onFocus={(e) => e.target.select()}
-              style={{ flex: 1, minWidth: 200, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 8, color: "#C9F5E0", padding: "5px 9px", fontSize: 11.5, fontFamily: "ui-monospace, monospace", outline: "none" }} />
-            <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 11.5 }} onClick={() => copyText(liveUrl, "url")}>
-              {copied === "url" ? <Check size={12} style={{ color: "#34D399" }} /> : <Copy size={12} />} {copied === "url" ? "Copied" : "Copy link"}
-            </button>
-          </div>
-        )}
-        {noGh && (
-          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 12.5, color: "#FDE68A" }}>
-            Connect GitHub in Integrations Hub to publish — open the “GitHub — self-edit” card, paste a token (Contents: Read and write) and tap Test connection.
-          </div>
-        )}
-        {pub.phase === "error" && (
-          <div style={{ margin: "0 20px", padding: "10px 14px", borderRadius: 10, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", fontSize: 12.5, color: "#FCA5A5" }}>{pub.msg}</div>
-        )}
+        <PublishStatus d={d} pub={pub} noGh={noGh} published={published} livePath={livePath} liveUrl={liveUrl} copied={copied} copyText={copyText} />
 
         {/* Footer */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
@@ -279,6 +299,130 @@ export function DeliverablePreview({ d, S, up, log, onClose }) {
           )}
           <span style={{ flex: 1 }} />
           <button style={btnGhost} onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   WEBSITE REVIEW — full-screen, QIMMAH-branded review of a site
+   the fleet just built. The finished page renders live under a
+   branded chrome bar (Qimmah mark, mobile/desktop toggle, reload,
+   publish). This is the "review it right here" experience — no
+   code to copy, nothing to run somewhere else.
+   ============================================================ */
+export function WebsiteReview({ d, S, up, log, onClose }) {
+  const content = String((d && d.content) || "");
+  const tooBig = content.length > MAX_PREVIEW_CHARS;
+  const [mode, setMode] = useState("preview"); // preview | code
+  const [device, setDevice] = useState(() => (typeof window !== "undefined" && window.innerWidth < 720 ? "mobile" : "desktop"));
+  const [frameKey, setFrameKey] = useState(0); // bump = reload the live preview
+  const { copied, copyText } = useCopyText();
+  const { pub, noGh, published, livePath, liveUrl, publish } = useDeliverablePublish(d, S, up, log);
+  const title = d.title || d.topic || d.filename || "Website";
+  const builder = d.agent ? String(d.agent) : "Delivery Fleet";
+
+  /* Escape closes; listener lives only while the review is open. */
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const iconBtn = {
+    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 9,
+    color: "#C4B5FD", cursor: "pointer", padding: "6px 9px", display: "inline-flex", alignItems: "center", gap: 6,
+    fontSize: 12, fontWeight: 600, fontFamily: "inherit", textDecoration: "none",
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1100, background: "#0B0713", display: "flex", flexDirection: "column" }}>
+      {/* Qimmah chrome bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: "1px solid rgba(124,58,237,0.35)", background: "linear-gradient(180deg, rgba(19,13,32,0.99), rgba(11,7,19,0.99))", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+          <QimmahMark size={26} />
+          <div style={{ lineHeight: 1.15, flexShrink: 0 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 2.5, color: "#F5F3FF", fontFamily: "'Space Grotesk', sans-serif" }}>QIMMAH</div>
+            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 1.4, textTransform: "uppercase", color: CYAN }}>Website Review</div>
+          </div>
+          <span style={{ fontSize: 11.5, color: "#8B86A3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, marginLeft: 2 }}>{title}</span>
+        </div>
+        <span style={{ flex: 1 }} />
+        {mode === "preview" && !tooBig && (
+          <div style={{ display: "flex", borderRadius: 9, overflow: "hidden", border: "1px solid rgba(255,255,255,0.14)" }}>
+            {[["mobile", Smartphone, "Mobile"], ["desktop", Monitor, "Desktop"]].map(([dv, Icon, label]) => (
+              <button key={dv} onClick={() => setDevice(dv)} title={label + " view"}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", background: device === dv ? "rgba(6,182,212,0.3)" : "rgba(255,255,255,0.05)", color: device === dv ? "#A5F3FC" : "#8B86A3" }}>
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {!tooBig && (
+          <div style={{ display: "flex", borderRadius: 9, overflow: "hidden", border: "1px solid rgba(255,255,255,0.14)" }}>
+            {[["preview", Eye, "Preview"], ["code", Code2, "Code"]].map(([m, Icon, label]) => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "none", fontFamily: "inherit", background: mode === m ? "rgba(124,58,237,0.4)" : "rgba(255,255,255,0.05)", color: mode === m ? "#EDE9FE" : "#8B86A3" }}>
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "preview" && !tooBig && (
+          <button style={iconBtn} title="Reload the live preview" onClick={() => setFrameKey((k) => k + 1)}><RotateCw size={14} /></button>
+        )}
+        {published && (
+          <a href={liveUrl} target="_blank" rel="noreferrer" style={{ ...iconBtn, color: "#9FE8C4", borderColor: "rgba(52,211,153,0.4)" }} title={"Live at /" + livePath}>
+            <ExternalLink size={13} /> Live
+          </a>
+        )}
+        <button onClick={onClose} title="Close (Esc)" style={{ ...iconBtn, padding: 7 }}><X size={16} /></button>
+      </div>
+
+      {/* Stage — the site itself, full-bleed (or phone-width in Mobile view) */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", justifyContent: "center", overflow: "auto", background: mode === "preview" && device === "mobile" ? "radial-gradient(ellipse at top, rgba(124,58,237,0.14), rgba(11,7,19,0) 60%), #0B0713" : mode === "preview" ? "#fff" : "#0B0713" }}>
+        {tooBig ? (
+          <div style={{ textAlign: "center", padding: "48px 20px", alignSelf: "center" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#E9E4FB", marginBottom: 8 }}>Too large to preview</div>
+            <div style={{ fontSize: 13, color: "#A5A0B8", maxWidth: 420, margin: "0 auto" }}>
+              This file is {(content.length / 1048576).toFixed(1)} MB — over the 1 MB preview limit. Download it instead and open it locally.
+            </div>
+          </div>
+        ) : mode === "preview" ? (
+          <iframe key={frameKey} title={"Live preview of " + title} sandbox="allow-scripts" srcDoc={content}
+            style={device === "mobile"
+              ? { width: 390, maxWidth: "100%", height: "100%", border: "none", background: "#fff", display: "block", boxShadow: "0 0 0 1px rgba(124,58,237,0.45), 0 18px 60px rgba(0,0,0,0.55)" }
+              : { width: "100%", height: "100%", border: "none", background: "#fff", display: "block" }} />
+        ) : (
+          <pre style={{ margin: 0, flex: 1, width: "100%", padding: "18px 22px", fontSize: 12.5, lineHeight: 1.65, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", color: "#C9C4DC", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{content}</pre>
+        )}
+      </div>
+
+      {/* Branded footer: credit line + publish + file actions */}
+      <div style={{ borderTop: "1px solid rgba(124,58,237,0.3)", background: "rgba(19,13,32,0.99)", padding: "10px 12px" }}>
+        <PublishStatus d={d} pub={pub} noGh={noGh} published={published} livePath={livePath} liveUrl={liveUrl} copied={copied} copyText={copyText} compact />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: published || noGh || pub.phase === "error" ? 8 : 0 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6B6685" }}>
+            <QimmahMark size={14} /> Built by {builder} · Qimmah Digital
+          </span>
+          <span style={{ flex: 1 }} />
+          <button style={{ ...btnGhost, padding: "7px 12px", fontSize: 12 }} onClick={() => copyText(content, "content")}>
+            {copied === "content" ? <Check size={12} style={{ color: "#34D399" }} /> : <Copy size={12} />} {copied === "content" ? "Copied" : "Copy code"}
+          </button>
+          <button style={{ ...btnGhost, padding: "7px 12px", fontSize: 12 }}
+            onClick={() => { try { downloadFile(d.filename || "website.html", content, deliverableMime(d.filename)); if (log) log("system", "Deliverable downloaded: " + String(d.filename || "").slice(0, 50)); } catch (err) { /* download unavailable */ } }}>
+            <Download size={12} /> Download
+          </button>
+          {!tooBig && (
+            <button
+              style={{ ...btnPrimary, padding: "7px 14px", fontSize: 12, background: "linear-gradient(135deg, #059669, #047857)", boxShadow: "0 0 18px rgba(5,150,105,0.35)", opacity: pub.phase === "working" ? 0.6 : 1 }}
+              disabled={pub.phase === "working"}
+              title={published ? "Publish the current content again (updates the same URL)" : "Commit this site to the repo — it goes live at /" + livePath + " after Vercel redeploys"}
+              onClick={publish}>
+              <Globe size={12} /> {pub.phase === "working" ? "Publishing…" : published ? "Republish" : "Publish live"}
+            </button>
+          )}
         </div>
       </div>
     </div>
