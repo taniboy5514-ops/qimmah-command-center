@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { Award, Download, Play, Power, Zap, FileText, Users, Brain, ChevronDown, ChevronUp, Trash2, Eye } from "lucide-react";
 import { PURPLE, CYAN, SQUAD_META, AGENT_NAMES, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, uid, omr, timeAgo, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, fleetChatMsg, CHAT_CAP } from "./shared.jsx";
 import { downloadFile } from "./views3.jsx";
-import { DeliverablePreview } from "./preview.jsx";
+import { DeliverablePreview, WebsiteReview, isHtmlDeliverable } from "./preview.jsx";
 
 export const SQUADS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"];
 
@@ -439,7 +439,7 @@ function ResultCard({ r, up, log, S }) {
           <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
             {r.content && (
               <button style={btnPrimary} onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}>
-                <Eye size={13} /> Preview
+                <Eye size={13} /> {isHtmlDeliverable(r) ? "Review website" : "Preview"}
               </button>
             )}
             {r.content && (
@@ -453,8 +453,9 @@ function ResultCard({ r, up, log, S }) {
           </div>
         </div>
       )}
-      {showPreview && (
-        <DeliverablePreview d={r} S={S} up={up} log={log} onClose={() => setShowPreview(false)} />
+      {showPreview && (isHtmlDeliverable(r)
+        ? <WebsiteReview d={r} S={S} up={up} log={log} onClose={() => setShowPreview(false)} />
+        : <DeliverablePreview d={r} S={S} up={up} log={log} onClose={() => setShowPreview(false)} />
       )}
     </Card>
   );
