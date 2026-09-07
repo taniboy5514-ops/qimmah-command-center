@@ -210,8 +210,8 @@ Available actions (max 6 per reply):
 - {"type":"compose_email","to":string,"subject":string,"body":string}
 - {"type":"remember_fact","fact":string} — permanently save something worth remembering long-term (a decision, a client detail, a number, a preference)
 - {"type":"save_contact","name":string,"phone":string optional,"email":string optional,"note":string optional} — save how to reach a worker or client so you can contact them later
-- {"type":"deliver_work","title":string,"filename":"name.html|.md|.txt|.svg","content":"the COMPLETE file content"} — deliver a finished work product (website page, logo SVG, copy deck, proposal) as a downloadable file. Use this whenever you produce tangible work.
-RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Whenever you produce tangible work (code, copy, designs as SVG), deliver it with deliver_work so the user can download the file immediately — that is how the agents "hand in" their work. Keep the visible text of your reply free of JSON.`;
+- {"type":"deliver_work","title":string,"filename":"name.html|.md|.txt|.svg","content":"the COMPLETE file content"} — deliver a finished work product (logo SVG, copy deck, proposal, short file) as a downloadable file. Use this whenever you produce tangible work.
+RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Whenever you produce tangible work (code, copy, designs as SVG), deliver it with deliver_work so the user can download the file immediately — that is how the agents "hand in" their work. When the user asks for a WEBSITE or any large file, do NOT put the file content in a deliver_work action — reply in prose only; the delivery fleet builds the complete file in a dedicated follow-up step automatically. Never start a json block you cannot finish. Keep the visible text of your reply free of JSON.`;
 
 /* Work-intent detection — when the user asks the AI CEO for tangible work
    (build/write/design/plan something), the chat makes a second call that
@@ -243,6 +243,11 @@ export function parseActions(text) {
         clean = text.replace(fence[0], "").trim();
       }
     } catch (e) { /* malformed block: show raw text, take no actions */ }
+  }
+  /* Truncated reply (model hit the output limit mid-block): never show a
+     dangling fence with raw JSON/HTML in the chat — cut at the last fence. */
+  if ((clean.match(/```/g) || []).length % 2 === 1) {
+    clean = clean.slice(0, clean.lastIndexOf("```")).trim();
   }
   return { clean, actions };
 }
@@ -314,15 +319,13 @@ export function applyActions(actions, S, up, log) {
         log("system", "Contact saved: " + cname);
         results.push("Contact saved: " + cname + (phone ? " +" + phone : "") + (email ? " " + email : ""));
       } else if (a.type === "deliver_work" && a.content) {
-        const fname = String(a.filename || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60);
-        const content = String(a.content).slice(0, 60000);
+        const fname = String(a.filename || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60) || "deliverable.md";
+        const content = String(a.content).slice(0, 200000);
         const title = String(a.title || fname).slice(0, 100);
-        const mime = fname.endsWith(".html") ? "text/html" : fname.endsWith(".svg") ? "image/svg+xml" : "text/plain";
-        const href = "data:" + mime + ";charset=utf-8," + encodeURIComponent(content);
-        links.push({ kind: "File", href, label: "Download " + fname, download: fname });
-        up((s) => ({ ...s, deliverables: [{ id: uid(), title, filename: fname, content, ts: Date.now() }, ...(s.deliverables || [])].slice(0, 30) }));
+        const hour = new Date().toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+        up((s) => ({ ...s, results: [{ id: uid(), type: "deliverable", topic: title, title, filename: fname, content, summary: "Delivered by the AI CEO in chat", hour, squad: "Beta", agent: "Delivery Fleet", cycle: null, ts: Date.now() }, ...(s.results || [])].slice(0, 200) }));
         log("autopilot", "Work delivered: " + title);
-        results.push("Delivered: " + title + " — tap Download " + fname + " to get the file");
+        results.push("Delivered: " + title + " (" + fname + ") — saved in Results");
       }
     } catch (e) { /* skip malformed action, never crash the run */ }
   });
@@ -392,7 +395,8 @@ export const GROQ_MODEL_LABELS = {
 
 /* opts.model overrides the default model (Study Mode uses groq/compound for live
    web search). opts.full returns { reply, sources } so callers can keep the web
-   sources Groq Compound used. */
+   sources Groq Compound used. opts.maxTokens raises the 1200-token output cap —
+   deliverable passes need long outputs (a full website is 4,000-8,000 tokens). */
 export async function aiCall(S, sys, messages, opts) {
   const o = opts || {};
   if (IN_PREVIEW) {
@@ -416,7 +420,7 @@ export async function aiCall(S, sys, messages, opts) {
     res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + S.groqKey },
-      body: JSON.stringify({ model, max_tokens: 1200, messages: [{ role: "system", content: sys }, ...messages] }),
+      body: JSON.stringify({ model, max_tokens: o.maxTokens || 1200, messages: [{ role: "system", content: sys }, ...messages] }),
     });
     if (res.ok) {
       if (mi > 0) { o._usedModel = model; }
@@ -425,7 +429,11 @@ export async function aiCall(S, sys, messages, opts) {
     let detail = "";
     try { const ej = await res.clone().json(); detail = ej && ej.error && ej.error.message ? String(ej.error.message) : ""; } catch (e) { /* non-JSON error body */ }
     const modelGone = res.status === 404 || res.status === 400 && /decommission|does not exist|no longer supported/i.test(detail) || /decommission|does not exist|no longer supported/i.test(detail);
-    if (modelGone && mi < candidates.length - 1 && !o.model) { lastErr = { status: res.status, detail }; continue; }
+    /* Any model-level failure (400/404/413/422/429/5xx) falls through to the
+       next model in the chain — one bad, busy or tool-confused model must
+       never break the fleet. Only an invalid key (401) aborts immediately. */
+    const modelLevel = res.status !== 401;
+    if (modelLevel && mi < candidates.length - 1 && !o.model) { lastErr = { status: res.status, detail }; continue; }
     const msg = res.status === 401
       ? "Invalid Groq API key. Open Settings and paste a fresh key from console.groq.com."
       : res.status === 429
