@@ -668,7 +668,7 @@ export function AutopilotPanel({ S, up, log, user }) {
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 6 }}>{pending.actions.length} proposed action{pending.actions.length > 1 ? "s" : ""}</div>
                   <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7, marginBottom: 10 }}>
-                    {pending.actions.map((a, i) => <div key={i}>{"\u2022"} {describeAction(a)}</div>)}
+                    {pending.actions.map((a, i) => <div key={i}>{"•"} {describeAction(a)}</div>)}
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button style={{ ...btnPrimary, padding: "8px 16px", fontSize: 13 }} onClick={approve}><Check size={14} /> Approve and apply</button>
@@ -685,7 +685,7 @@ export function AutopilotPanel({ S, up, log, user }) {
               <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, color: "#C9C4DC", marginBottom: 8 }}>{ap.last.briefing}</div>
               {ap.last.results && ap.last.results.length > 0 && (
                 <div style={{ lineHeight: 1.7 }}>
-                  {ap.last.results.map((r, i) => <div key={i} style={{ color: "#9FE8C4" }}>{"\u2713"} {r}</div>)}
+                  {ap.last.results.map((r, i) => <div key={i} style={{ color: "#9FE8C4" }}>{"✓"} {r}</div>)}
                 </div>
               )}
               {ap.last.links && ap.last.links.length > 0 && (
@@ -981,7 +981,16 @@ export function CEOChat({ S, up, log, user, go }) {
       const raw = await aiCall(S, sys, history);
       const parsed = parseActions(raw);
       let reply = parsed.clean || raw;
-      const aiMsg = { id: uid(), role: "assistant", content: reply, actions: parsed.actions || null, applied: false, links: [], ts: Date.now(), goalOffer: wantsGoal(text) ? text : null };
+      /* deliver_work only saves a file to Results — safe to apply the moment it
+         arrives, and it attaches the delivered-file card (with "Review website"
+         for HTML) to this message, so there is nothing extra to tap. */
+      const allActs = parsed.actions || [];
+      const deliverNow = allActs.filter((a) => a && a.type === "deliver_work" && a.content);
+      const pendingActs = allActs.filter((a) => !(a && a.type === "deliver_work" && a.content));
+      if (deliverNow.length) applyActions(deliverNow, S, up, log);
+      const firstFile = deliverNow[0] || null;
+      const aiMsg = { id: uid(), role: "assistant", content: reply, actions: pendingActs.length ? pendingActs : null, applied: false, links: [], ts: Date.now(), goalOffer: wantsGoal(text) ? text : null,
+        deliverable: firstFile ? { id: uid(), title: String(firstFile.title || firstFile.filename || "Deliverable").slice(0, 100), filename: (String(firstFile.filename || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60)) || "deliverable.md", content: String(firstFile.content).slice(0, 200000) } : null };
       const cat = classifyInsight(reply);
       const insight = { id: uid(), cat, text: reply.replace(/[*#_`]/g, "").slice(0, 200), ts: Date.now() };
       up((s) => ({
@@ -995,7 +1004,7 @@ export function CEOChat({ S, up, log, user, go }) {
       /* WORK GETS DONE — if the user asked for a deliverable and the reply
          only talked about it (no deliver_work action), make a second call
          that produces the actual artifact and save it to Results. */
-      const alreadyDelivered = (parsed.actions || []).some((a) => a && a.type === "deliver_work");
+      const alreadyDelivered = deliverNow.length > 0;
       if (wantsWork(text) && !alreadyDelivered) {
         try {
           const dsys = SYSTEM_PROMPT
@@ -1008,11 +1017,11 @@ export function CEOChat({ S, up, log, user, go }) {
           const dmsgs = [{ role: "user", content: "User request: " + text + "\n\nThe CEO's reply for context: " + reply.slice(0, 900) + "\n\nNow produce the complete deliverable file." }];
           let draw;
           try {
-            draw = await aiCall(S, dsys, dmsgs, { model: "groq/compound" });
+            draw = await aiCall(S, dsys, dmsgs, { model: "groq/compound", maxTokens: 8000 });
           } catch (e) {
             const modelErr = e && (e.status === 400 || e.status === 404 || /model|compound|decommissioned|not found/i.test(String(e.detail || "")));
             if (!modelErr || IN_PREVIEW) throw e;
-            draw = await aiCall(S, dsys, dmsgs);
+            draw = await aiCall(S, dsys, dmsgs, { maxTokens: 8000 });
           }
           const fence = draw.match(/```json\s*([\s\S]*?)```/) || draw.match(/```\s*(\{[\s\S]*?"content"[\s\S]*?\})\s*```/);
           let d = null;
@@ -1233,7 +1242,8 @@ export function CEOChat({ S, up, log, user, go }) {
           {S.chat.map((m) => (
             <div key={m.id} style={{ alignSelf: m.role === "user" ? "flex-end" : "flex-start", maxWidth: "85%" }}>
               {m.fleet && (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", color: CYAN, padding: "2px 8px", borderRadius: 20, background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.35)", marginBottom: 4 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 9.5, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", color: CYAN,
+                  padding: "2px 8px", borderRadius: 20, background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.35)", marginBottom: 4 }}>
                   <Radio size={10} /> Fleet · {m.by || "agent"}
                 </div>
               )}
@@ -1292,7 +1302,7 @@ export function CEOChat({ S, up, log, user, go }) {
                     {m.applied ? "Actions executed" : m.actions.length + " proposed action" + (m.actions.length > 1 ? "s" : "")}
                   </div>
                   <div style={{ fontSize: 12, color: "#D8D3E8", lineHeight: 1.65 }}>
-                    {m.actions.map((a, i) => <div key={i}>{"\u2022"} {describeAction(a)}</div>)}
+                    {m.actions.map((a, i) => <div key={i}>{"•"} {describeAction(a)}</div>)}
                   </div>
                   {!m.applied && (
                     <button style={{ ...btnPrimary, marginTop: 8, padding: "7px 14px", fontSize: 12.5 }}
