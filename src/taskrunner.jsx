@@ -78,7 +78,7 @@ function runnerSys(agent) {
     + "DELIVERABLE MODE: Produce the COMPLETE finished artifact for this task — the full copy deck, the full outreach script, the full plan, the full code — ready to use as-is. No placeholders, no 'TODO', no describing the work — the finished work itself. Bilingual (Arabic + English) where it helps the Omani market.\n"
     + "End your reply with a fenced json block exactly like:\n"
     + "```json\n{\"title\":\"short deliverable title\",\"filename\":\"kebab-case-name.md\",\"content\":\"the COMPLETE file content\"}\n```\n"
-    + "Use .html as the filename when the deliverable is a web page. Keep any prose before the json block free of JSON."
+    + "Use .html as the filename when the deliverable is a web page. For web pages the content MUST be ONE complete self-contained HTML document (all CSS in one <style> tag, all JS in one <script> tag, no external files) that looks finished the moment it opens. Keep any prose before the json block free of JSON."
     + agentToolkitNote(agent)).slice(0, 3600);
 }
 
@@ -88,7 +88,7 @@ function parseDeliverable(raw, taskTitle) {
   let d = null;
   const fence = raw.match(/```json\s*([\s\S]*?)```/) || raw.match(/```\s*(\{[\s\S]*?"content"[\s\S]*?\})\s*```/);
   if (fence) { try { d = JSON.parse(fence[1]); } catch (e) { /* malformed — use raw */ } }
-  const content = String((d && d.content) || raw).slice(0, 6000);
+  const content = String((d && d.content) || raw).slice(0, 200000);
   const title = String((d && d.title) || ("Deliverable: " + taskTitle.slice(0, 60))).slice(0, 100);
   const filename = (String((d && d.filename) || "deliverable.md").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60)) || "deliverable.md";
   return { title, filename, content };
@@ -188,7 +188,7 @@ export function TaskRunner({ S, up, log }) {
             + (candidate.note ? "\nNotes from the CEO: " + String(candidate.note).slice(0, 400) : "")
             + leadsBlock
             + "\n\nProduce the complete deliverable now.";
-          const raw = await aiCall(s, sys, [{ role: "user", content: brief.slice(0, 3200) }]);
+          const raw = await aiCall(s, sys, [{ role: "user", content: brief.slice(0, 3200) }], { maxTokens: 8000 });
           const d = parseDeliverable(raw, candidate.title);
           const resultId = uid();
           const hour = new Date().toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit" });
