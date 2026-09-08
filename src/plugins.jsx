@@ -167,6 +167,28 @@ export function securityTrainingNote(agent) {
     + "\nRULES: Ground findings in published payload categories, frameworks and cheat sheets. Cite the category or framework (e.g. MITRE ATT&CK technique, NIST CSF function) you checked against in your findings list.";
 }
 
+/* ---------- Self-hosted automation engines — the n8n-alternatives study ----------
+   Taught to automation-adjacent agents: when a task needs messages fired on
+   a trigger (24/7, scheduled, or "when I ask"), recommend the right FREE
+   self-hosted engine and design the webhook flow. */
+export const AUTOMATION_SOURCES = [
+  { name: "Activepieces", url: "github.com/activepieces/activepieces", what: "top pick — MIT, ~24k stars, 400+ integrations (Telegram, WhatsApp, Slack, Gmail, SMS); Webhook trigger → Send Message; one docker compose up, unlimited free runs" },
+  { name: "Automatisch", url: "github.com/automatisch/automatisch", what: "simplest setup — AGPL self-hosted, 100+ integrations, HTTP POST webhook triggers; light enough for a $5 VPS" },
+  { name: "Node-RED", url: "github.com/node-red/node-red", what: "the classic — Apache 2.0, HTTP-in node IS the webhook, 4,000+ messaging nodes (Telegram, Slack, WhatsApp, email, SMS, MQTT); runs on anything incl. a Raspberry Pi" },
+  { name: "Sim", url: "github.com/simstudioai/sim", what: "AI-native flows — webhook triggers, 60+ integrations, local LLMs via Ollama (no API keys); best when the message itself is AI-written on the way out" },
+];
+
+const AUTOMATION_TRAINED_AGENTS = ["Process Automation", "Integration Specialist", "Tech Researcher", "WhatsApp Bot", "Email Automation", "Chatbot Builder"];
+
+export function automationTrainingNote(agent) {
+  if (!AUTOMATION_TRAINED_AGENTS.includes(agent.name)) return "";
+  return "\n\nAUTOMATION ENGINES — free self-hosted n8n alternatives for 'send a message when I ask' automations:\n"
+    + AUTOMATION_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
+    + "\nRULES: The pattern is the same in all four — Webhook trigger → Send Message action → copy the webhook URL → fire it from a Siri Shortcut, browser bookmark or curl."
+    + " These engines run OUTSIDE the Command Center (Docker on a VPS or Raspberry Pi) — be honest that they add the 24/7 fire-and-forget piece a browser app cannot do alone."
+    + " Pick ONE engine per job and say why: Activepieces = most integrations, Automatisch = simplest, Node-RED = maximum flexibility, Sim = AI-written messages.";
+}
+
 /* Prompt snippet injected by the Task Runner — tells the agent exactly
    which tools it owns and how to make the work REAL. */
 export function agentToolkitNote(agent) {
@@ -184,6 +206,7 @@ export function agentToolkitNote(agent) {
     + "\nWorking style: " + tk.note
     + designTrainingNote(agent)
     + securityTrainingNote(agent)
+    + automationTrainingNote(agent)
     + "\nDELIVERABLE FORMAT: " + fmtLine;
 }
 
@@ -311,6 +334,29 @@ export const PLUGIN_CATALOG = [
     about: "Open Viking organizes an agent's context (resources, memory, skills) into browsable directories agents can search. The Command Center's equivalent: buildSnapshot injects live business state into every agent call, and the knowledge base + results feed give the fleet shared context. The repo is the reference if context ever moves to a real database.",
     steps: ["Covered today: buildSnapshot + knowledge base on every agent call", "Real context database arrives with the Supabase backend"],
     powers: "Whole fleet (context)", tools: ["query_analytics", "study_topic"] },
+
+  /* ---- Self-hosted automation engines — the free n8n alternatives (CEO study).
+     Each runs OUTSIDE this app — one docker compose up on a $5 VPS or a
+     Raspberry Pi — and adds the one thing a browser app can't do alone: 24/7
+     fire-and-forget automation. The bridge is always a webhook: Webhook
+     trigger → Send Message action → copy the URL → fire it from a Siri
+     Shortcut, a browser bookmark or curl. ---- */
+  { id: "activepieces", name: "Activepieces", icon: "🔁", tint: "#8B5CF6", tagline: "Top pick — 400+ integrations · MIT, free forever", cats: ["Featured", "Productivity", "Developer Tools"], kind: "free",
+    about: "The best all-round n8n alternative (github.com/activepieces/activepieces · ~24k stars · MIT — free even commercially). A flow is Webhook trigger → Send Message, covering Telegram, WhatsApp, Slack, Discord, Gmail and SMS. Self-host once with docker compose and every run is free — no per-task pricing.",
+    steps: ["docker compose up on any VPS — running in ~15 minutes", "Flow: Webhook trigger → Send Message (Telegram / WhatsApp / email…)", "Copy the webhook URL — fire it from a Siri Shortcut, bookmark or curl", "Ask the CEO: 'study Activepieces' — the setup brief lands in the knowledge base"],
+    powers: "Process Automation, Integration Specialist, WhatsApp Bot", tools: ["compose_whatsapp", "compose_email"] },
+  { id: "automatisch", name: "Automatisch", icon: "🚀", tint: "#3B82F6", tagline: "Simplest setup — live in under 10 minutes", cats: ["Productivity"], kind: "free",
+    about: "The lean option (github.com/automatisch/automatisch · ~14k stars · AGPL-3.0 self-hosted). 100+ built-in integrations with webhook triggers via plain HTTP POST; light enough to run on a $5/month VPS for low volume.",
+    steps: ["docker compose up — the fastest setup of the four", "Trigger any flow with a plain HTTP POST to its webhook URL", "Best when you want a handful of simple automations, not a platform"],
+    powers: "Process Automation, Email Automation", tools: ["compose_email", "compose_whatsapp"] },
+  { id: "node-red", name: "Node-RED", icon: "🔴", tint: "#EF4444", tagline: "The classic — runs on anything, even a Raspberry Pi", cats: ["Developer Tools"], kind: "free",
+    about: "The veteran flow editor (github.com/node-red/node-red · 23k+ stars · Apache 2.0). Its HTTP-in node IS a webhook — any request starts the flow — and 4,000+ community nodes cover Telegram, Slack, WhatsApp, email, SMS and MQTT. Runs on a Raspberry Pi, an old laptop, a VPS or Docker.",
+    steps: ["Drop in an HTTP-in node — that URL is your webhook", "Wire it to any of the 4,000+ messaging nodes", "Best for tinkerers who want maximum flexibility"],
+    powers: "Integration Specialist, Tech Researcher", tools: ["web_search", "study_topic"] },
+  { id: "sim-ai", name: "Sim (AI Workflows)", icon: "🤖", tint: "#22D3EE", tagline: "AI-native flows — local LLMs via Ollama, no keys", cats: ["Developer Tools", "Productivity"], kind: "free",
+    about: "The newest option (github.com/simstudioai/sim · open source): an n8n-style drag-and-drop builder that is AI-native — it connects to OpenAI, Claude or fully local models via Ollama, with 60+ integrations including Telegram, Slack, Gmail and Notion. Best when the message itself should be AI-written on the way out.",
+    steps: ["Webhook trigger starts the flow from anywhere", "Add an AI step — the message is written by the model, then sent", "Run local models via Ollama: zero API keys needed"],
+    powers: "AI Prompt Engineer, Process Automation, Integration Specialist", tools: ["study_topic", "web_search"] },
 
   /* ---- Design training library (free external sources — taught to all design agents) ---- */
   { id: "refero", name: "Refero DESIGN.md", icon: "🎨", tint: "#A78BFA", tagline: "2,000+ AI-readable design systems from real sites", cats: ["Creativity & 3D", "Developer Tools", "Featured"], kind: "free",
