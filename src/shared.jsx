@@ -97,6 +97,8 @@ export const DEFAULT_STATE = {
      or sent anywhere except the matching official API. */
   integrations: {
     whatsapp: { token: "", phoneNumberId: "" },
+    telegram: { botToken: "", chatId: "" },
+    call: { provider: "vapi", apiKey: "", assistantId: "", phoneNumberId: "" },
     instagram: { token: "", appId: "", appSecret: "" },
     video: { service: "YouTube", key: "", project: "" },
   },
@@ -208,10 +210,13 @@ Available actions (max 6 per reply):
 - {"type":"add_opportunity","segment":string,"note":string optional}
 - {"type":"compose_whatsapp","phone":"digits with country code","message":string}
 - {"type":"compose_email","to":string,"subject":string,"body":string}
+- {"type":"send_telegram","message":string} — SEND a real Telegram message to the CEO's Telegram, delivered instantly by the bot configured in the Integrations vault. Use when the user asks to be notified or messaged on Telegram.
+- {"type":"send_whatsapp","phone":"digits with country code","message":string} — SEND a real WhatsApp message through the Cloud API when the Integrations vault is configured (Meta's 24-hour window rules apply); falls back to a tap-to-send link when it is not.
+- {"type":"make_call","phone":"digits with country code","task":"what the AI should say on the call"} — place a REAL AI voice phone call through the call provider configured in the Integrations vault. Use when the user asks the centre to call someone.
 - {"type":"remember_fact","fact":string} — permanently save something worth remembering long-term (a decision, a client detail, a number, a preference)
 - {"type":"save_contact","name":string,"phone":string optional,"email":string optional,"note":string optional} — save how to reach a worker or client so you can contact them later
 - {"type":"deliver_work","title":string,"filename":"name.html|.md|.txt|.svg","content":"the COMPLETE file content"} — deliver a finished work product (logo SVG, copy deck, proposal, short file) as a downloadable file. Use this whenever you produce tangible work.
-RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. Messages you compose are prepared for the user to tap and send; nothing is sent automatically. When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Whenever you produce tangible work (code, copy, designs as SVG), deliver it with deliver_work so the user can download the file immediately — that is how the agents "hand in" their work. When the user asks for a WEBSITE or any large file, do NOT put the file content in a deliver_work action — reply in prose only; the delivery fleet builds the complete file in a dedicated follow-up step automatically. Never start a json block you cannot finish. Keep the visible text of your reply free of JSON.`;
+RULES: Only include actions when the user asks you to do, execute, organize or prepare something, or in AUTOPILOT MODE. Ground every client name and amount in the LIVE BUSINESS STATE or the conversation - never invent them. compose_whatsapp and compose_email only PREPARE a message for the user to tap and send. send_telegram, send_whatsapp and make_call are different: they fire for real through the Integrations vault the moment your actions are applied — use them only when the user clearly asks you to actually send or call, and ground the phone number in the saved contacts or the conversation (never invent one). When the user tells you something worth remembering long-term, include a remember_fact action in the same reply so it survives new conversations. When you learn a worker's or client's phone or email, save it with save_contact. Whenever you produce tangible work (code, copy, designs as SVG), deliver it with deliver_work so the user can download the file immediately — that is how the agents "hand in" their work. When the user asks for a WEBSITE or any large file, do NOT put the file content in a deliver_work action — reply in prose only; the delivery fleet builds the complete file in a dedicated follow-up step automatically. Never start a json block you cannot finish. Keep the visible text of your reply free of JSON.`;
 
 /* Work-intent detection — when the user asks the AI CEO for tangible work
    (build/write/design/plan something), the chat makes a second call that
@@ -259,10 +264,36 @@ export function describeAction(a) {
   if (a.type === "add_opportunity") return "Log opportunity: " + a.segment;
   if (a.type === "compose_whatsapp") return "Prepare WhatsApp message" + (a.phone ? " for +" + a.phone : "");
   if (a.type === "compose_email") return "Prepare email to " + a.to;
+  if (a.type === "send_telegram") return "SEND Telegram message to the CEO";
+  if (a.type === "send_whatsapp") return "SEND WhatsApp message" + (a.phone ? " to +" + String(a.phone).replace(/[^0-9]/g, "") : "") + " (real send if the vault is configured)";
+  if (a.type === "make_call") return "PLACE AI voice call" + (a.phone ? " to +" + String(a.phone).replace(/[^0-9]/g, "") : "");
   if (a.type === "remember_fact") return "Remember: " + String(a.fact || "").slice(0, 80);
   if (a.type === "save_contact") return "Save contact: " + String(a.name || "");
   if (a.type === "deliver_work") return "Deliver file: " + String(a.filename || a.title || "work file");
   return "Unrecognized action (skipped)";
+}
+
+/* Real-send bridge — calls the /api/send serverless proxy with keys from the
+   device vault. Keys travel with this one request only; the server stores
+   nothing. applyActions stays synchronous: the send runs in the background
+   and reports its outcome into the fleet chat channel when it lands. */
+async function sendViaApi(payload) {
+  const res = await fetch("/api/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* non-JSON reply */ }
+  if (!res.ok || !data || !data.ok) {
+    throw new Error((data && data.error) || "Send failed (error " + res.status + ").");
+  }
+  return data.detail || "Sent.";
+}
+
+function reportSend(up, log, by, ok, detail) {
+  log("integration", by + ": " + detail);
+  up((s) => ({ ...s, chat: [...(s.chat || []), fleetChatMsg(by, (ok ? "✅ " : "⚠️ ") + detail)].slice(-CHAT_CAP) }));
 }
 
 export function applyActions(actions, S, up, log) {
@@ -306,6 +337,54 @@ export function applyActions(actions, S, up, log) {
         links.push({ kind: "Email", href, label: "Open email to " + String(a.to).trim() });
         log("autopilot", "Email prepared for " + a.to);
         results.push("Email prepared for " + a.to);
+      } else if (a.type === "send_telegram" && a.message) {
+        const tg = (S.integrations && S.integrations.telegram) || {};
+        const text = String(a.message).slice(0, 1500);
+        if (!tg.botToken || !tg.chatId) {
+          results.push("Telegram is not configured - open Integrations, Telegram Bot card, paste the bot token + chat ID, then ask again");
+          log("integration", "Telegram send skipped: vault not configured");
+        } else {
+          results.push("Telegram message sending now - the outcome lands in this chat in a few seconds");
+          log("integration", "Telegram send fired to chat " + tg.chatId);
+          sendViaApi({ channel: "telegram", botToken: tg.botToken, chatId: tg.chatId, text })
+            .then((detail) => reportSend(up, log, "Telegram", true, detail))
+            .catch((e) => reportSend(up, log, "Telegram", false, e && e.message ? e.message : "Send failed."));
+        }
+      } else if (a.type === "send_whatsapp" && a.message) {
+        const wa = (S.integrations && S.integrations.whatsapp) || {};
+        const phone = String(a.phone || "").replace(/[^0-9]/g, "");
+        const text = String(a.message).slice(0, 1500);
+        if (wa.token && wa.phoneNumberId && phone.length >= 8) {
+          results.push("WhatsApp message sending now via the Cloud API - outcome lands in this chat shortly");
+          log("integration", "WhatsApp Cloud API send fired to +" + phone);
+          sendViaApi({ channel: "whatsapp", token: wa.token, phoneNumberId: wa.phoneNumberId, to: phone, text })
+            .then((detail) => reportSend(up, log, "WhatsApp", true, detail))
+            .catch((e) => reportSend(up, log, "WhatsApp", false, e && e.message ? e.message : "Send failed."));
+        } else {
+          const href = "https://wa.me/" + phone + "?text=" + encodeURIComponent(text);
+          links.push({ kind: "WhatsApp", href, label: "Send WhatsApp" + (phone ? " +" + phone : "") });
+          results.push("WhatsApp vault not configured (or no number given) - prepared a tap-to-send link instead");
+          log("integration", "WhatsApp prepared as wa.me link (vault not configured)");
+        }
+      } else if (a.type === "make_call" && a.phone) {
+        const vc = (S.integrations && S.integrations.call) || {};
+        const phone = String(a.phone || "").replace(/[^0-9]/g, "");
+        const provider = vc.provider === "bland" ? "bland" : "vapi";
+        const task = String(a.task || "You are the Qimmah Digital assistant calling on behalf of Sultan. Greet the person warmly, deliver the message clearly, and keep the call under two minutes.").slice(0, 600);
+        const ready = provider === "bland" ? Boolean(vc.apiKey) : Boolean(vc.apiKey && vc.assistantId && vc.phoneNumberId);
+        if (!ready || phone.length < 8) {
+          results.push("AI calling is not configured - open Integrations, AI Voice Calls card, connect Vapi or Bland, then ask again");
+          log("integration", "Voice call skipped: provider not configured");
+        } else {
+          results.push("AI voice call dialing +" + phone + " now - outcome lands in this chat shortly");
+          log("integration", "Voice call fired to +" + phone + " via " + provider);
+          const payload = provider === "bland"
+            ? { channel: "call", provider, apiKey: vc.apiKey, to: phone, task }
+            : { channel: "call", provider, apiKey: vc.apiKey, assistantId: vc.assistantId, phoneNumberId: vc.phoneNumberId, to: phone };
+          sendViaApi(payload)
+            .then((detail) => reportSend(up, log, "Voice Call", true, detail))
+            .catch((e) => reportSend(up, log, "Voice Call", false, e && e.message ? e.message : "Call failed."));
+        }
       } else if (a.type === "remember_fact" && a.fact) {
         const fact = String(a.fact).slice(0, 200);
         up((s) => ({ ...s, memory: [...(s.memory || []).filter((f) => f.text !== fact), { id: uid(), text: fact, ts: Date.now() }].slice(-60) }));
@@ -344,7 +423,9 @@ export const GROQ_MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "moonshot
    approval: true tools show amber and require human sign-off.
    ============================================================ */
 export const TOOL_CATALOG = [
-  { name: "send_whatsapp_message", desc: "Send a WhatsApp message via the WhatsApp Business API", squads: ["Alpha", "Epsilon"], approval: true },
+  { name: "send_telegram_message", desc: "Send a real Telegram message via your own bot — works today, free (runs through /api/send)", squads: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"], approval: false },
+  { name: "make_phone_call", desc: "Place a real AI voice phone call via Vapi or Bland (runs through /api/send)", squads: ["Alpha", "Epsilon"], approval: true },
+  { name: "send_whatsapp_message", desc: "Send a real WhatsApp message via the Meta Cloud API — 24h window rules apply (runs through /api/send)", squads: ["Alpha", "Epsilon"], approval: true },
   { name: "send_instagram_dm", desc: "Send an Instagram DM via the Meta Instagram API", squads: ["Alpha"], approval: true },
   { name: "create_lead", desc: "Add a new lead to the pipeline", squads: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"], approval: false },
   { name: "update_lead_status", desc: "Move a lead to a new pipeline status", squads: ["Alpha", "Epsilon"], approval: false },
@@ -384,7 +465,7 @@ export function wantsGoal(text) {
 }
 
 /* Honest-limits note shown on the MCP Discovery panel. */
-export const MCP_LIMITS_NOTE = "Honest limits: WhatsApp and Instagram tools return mock success until Meta API credentials are configured; web_search and study_topic are LLM knowledge synthesis, not a live web crawl; self_edit_code stages edits only — commits go through the human-approved GitHub flow.";
+export const MCP_LIMITS_NOTE = "Honest limits: Telegram, WhatsApp and AI voice calls send for real through /api/send the moment their vault cards are configured — before that, agents prepare tap-to-send links instead. Instagram DMs still need Meta app review. web_search and study_topic are LLM knowledge synthesis, not a live web crawl; self_edit_code stages edits only — commits go through the human-approved GitHub flow.";
 export const GROQ_MODEL_LABELS = {
   "openai/gpt-oss-120b": "GPT-OSS 120B (default — production)",
   "qwen/qwen3.6-27b": "Qwen 3.6 27B (multilingual, vision)",
