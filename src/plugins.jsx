@@ -75,7 +75,7 @@ export const AGENT_TOOLKIT = {
   "Ad Copywriter":        { tools: ["deliver_work", "web_search", "study_topic"], fmt: "md", note: "Deliver 5+ complete ad variants per brief, headlines + body + CTA." },
   "Analytics Specialist": { tools: ["query_analytics", "deliver_work", "study_topic"], fmt: "md", note: "Report from REAL workspace numbers only — never invent metrics." },
   "QA Tester":            { tools: ["test_connector", "deliver_work", "create_task"], fmt: "md", note: "Deliver a pass/fail checklist with exact reproduction steps for every issue." },
-"Project Manager":      { tools: ["create_task", "complete_task", "query_analytics", "deliver_work"], fmt: "md", note: "Break work into board tasks with owners; deliver the plan." },
+  "Project Manager":      { tools: ["create_task", "complete_task", "query_analytics", "deliver_work"], fmt: "md", note: "Break work into board tasks with owners; deliver the plan." },
   "Account Manager":      { tools: ["compose_email", "compose_whatsapp", "send_telegram", "create_task", "save_contact"], fmt: "md", note: "Deliver client-ready updates and check-in messages. Use send_telegram to keep the CEO posted instantly." },
 
   /* Squad Gamma — Intelligence (31–45) */
@@ -164,4 +164,416 @@ const SECURITY_TRAINED_AGENTS = ["Security Auditor", "Tech Researcher", "Integra
 
 export function securityTrainingNote(agent) {
   if (!SECURITY_TRAINED_AGENTS.includes(agent.name)) return "";
-  return "\n\nAI SECURITY REFERENCE — consult these s
+  return "\n\nAI SECURITY REFERENCE — consult these sources before any AI-security work:\n"
+    + SECURITY_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
+    + "\nRULES: Ground findings in published payload categories, frameworks and cheat sheets. Cite the category or framework (e.g. MITRE ATT&CK technique, NIST CSF function) you checked against in your findings list.";
+}
+
+/* ---------- Self-hosted automation engines — the n8n-alternatives study ----------
+   Taught to automation-adjacent agents: when a task needs messages fired on
+   a trigger (24/7, scheduled, or "when I ask"), recommend the right FREE
+   self-hosted engine and design the webhook flow. */
+export const AUTOMATION_SOURCES = [
+  { name: "Activepieces", url: "github.com/activepieces/activepieces", what: "top pick — MIT, ~24k stars, 400+ integrations (Telegram, WhatsApp, Slack, Gmail, SMS); Webhook trigger → Send Message; one docker compose up, unlimited free runs" },
+  { name: "Automatisch", url: "github.com/automatisch/automatisch", what: "simplest setup — AGPL self-hosted, 100+ integrations, HTTP POST webhook triggers; light enough for a $5 VPS" },
+  { name: "Node-RED", url: "github.com/node-red/node-red", what: "the classic — Apache 2.0, HTTP-in node IS the webhook, 4,000+ messaging nodes (Telegram, Slack, WhatsApp, email, SMS, MQTT); runs on anything incl. a Raspberry Pi" },
+  { name: "Sim", url: "github.com/simstudioai/sim", what: "AI-native flows — webhook triggers, 60+ integrations, local LLMs via Ollama (no API keys); best when the message itself is AI-written on the way out" },
+];
+
+const AUTOMATION_TRAINED_AGENTS = ["Process Automation", "Integration Specialist", "Tech Researcher", "WhatsApp Bot", "Email Automation", "Chatbot Builder"];
+
+export function automationTrainingNote(agent) {
+  if (!AUTOMATION_TRAINED_AGENTS.includes(agent.name)) return "";
+  return "\n\nAUTOMATION ENGINES — free self-hosted n8n alternatives for 'send a message when I ask' automations:\n"
+    + AUTOMATION_SOURCES.map((s) => "- " + s.name + " (" + s.url + "): " + s.what).join("\n")
+    + "\nRULES: The pattern is the same in all four — Webhook trigger → Send Message action → copy the webhook URL → fire it from a Siri Shortcut, browser bookmark or curl."
+    + " These engines run OUTSIDE the Command Center (Docker on a VPS or Raspberry Pi) — be honest that they add the 24/7 fire-and-forget piece a browser app cannot do alone."
+    + " Pick ONE engine per job and say why: Activepieces = most integrations, Automatisch = simplest, Node-RED = maximum flexibility, Sim = AI-written messages.";
+}
+
+/* Prompt snippet injected by the Task Runner — tells the agent exactly
+   which tools it owns and how to make the work REAL. */
+export function agentToolkitNote(agent) {
+  const tk = toolkitFor(agent);
+  const lines = tk.tools.map((id) => {
+    const d = TOOL_DEFS[id];
+    return d ? "- " + d.label + ": " + d.use : null;
+  }).filter(Boolean).join("\n");
+  const fmtLine = tk.fmt === "html"
+    ? "Your filename MUST end in .html — deliver a complete, working single-file page (inline CSS/JS, mobile-first)."
+    : tk.fmt === "svg"
+      ? "Your filename MUST end in .svg — deliver complete, valid SVG markup."
+      : "Your filename should end in .md — clean markdown the CEO can read and reuse.";
+  return "\n\nYOUR TOOLKIT — you are the specialist; use these to make the work REAL:\n" + lines
+    + "\nWorking style: " + tk.note
+    + designTrainingNote(agent)
+    + securityTrainingNote(agent)
+    + automationTrainingNote(agent)
+    + "\nDELIVERABLE FORMAT: " + fmtLine;
+}
+
+/* ---------- Plugin catalog (Kimi-style storefront) ----------
+   kind: builtin (always on) · key (needs an API key) · free (works,
+   opens externally) · soon (needs OAuth — honest about it).          */
+export const PLUGIN_CATEGORIES = ["Installed", "All", "Featured", "Productivity", "Creativity & 3D", "Developer Tools", "Research", "Finance"];
+
+export const PLUGIN_CATALOG = [
+  /* ---- Built-in, working today ---- */
+  { id: "task-runner", name: "Task Runner", icon: "⚙️", tint: "#FFB020", tagline: "Agents execute board tasks end-to-end", cats: ["Featured", "Productivity"], kind: "builtin",
+    about: "The autonomous executor: picks up In Progress tasks, runs them with the best-fit specialist, and hands the deliverable into Review — in minutes, while the app is open.",
+    powers: "All 60 agents", tools: ["deliver_work", "create_task", "complete_task"] },
+  { id: "preview-publish", name: "Preview & Publish", icon: "📦", tint: "#22D3EE", tagline: "Review agent work in-app, publish like Kimi", cats: ["Featured", "Productivity"], kind: "builtin",
+    about: "Tap any deliverable badge to preview it in-app (markdown or sandboxed HTML) — no download needed. Publish ships HTML to a public URL via GitHub.",
+    powers: "All 60 agents", tools: ["deliver_work"] },
+  { id: "website-studio", name: "Website Studio", icon: "🖥️", tint: "#06B6D4", tagline: "Websites built in chat, reviewed live — Qimmah-branded", cats: ["Featured", "Developer Tools"], kind: "builtin",
+    about: "Ask the AI CEO for a website and the delivery fleet ships a complete, self-contained HTML page. Tap “Review website” on the delivered card and it opens in the full-screen Qimmah Website Review — live mobile or desktop preview right inside the Command Center, under our own brand bar. No code to copy, nothing to run somewhere else. One tap publishes it to your public /published/ link via the GitHub connection.",
+    powers: "Web Developer, Delivery Fleet", tools: ["deliver_work"] },
+  { id: "ceo-actions", name: "CEO Chat Actions", icon: "💬", tint: "#7C3AED", tagline: "Tasks, invoices and outreach straight from chat", cats: ["Featured", "Productivity"], kind: "builtin",
+    about: "The AI CEO takes real actions mid-conversation: create/move tasks, draft invoices, compose WhatsApp & email, save contacts, remember facts, deliver files.",
+    powers: "AI CEO + Squad leads", tools: ["create_task", "draft_invoice", "compose_whatsapp", "compose_email", "deliver_work"] },
+  { id: "study-mode", name: "Study Mode", icon: "🔬", tint: "#A78BFA", tagline: "Live web research with saved sources", cats: ["Featured", "Research"], kind: "builtin",
+    about: "Groq Compound searches the live web; every brief is saved forever in the CEO knowledge base with the pages it actually visited.",
+    powers: "Gamma squad + CEO Brain", tools: ["web_search", "study_topic"] },
+  { id: "neural-voice", name: "Neural Voice (Free)", icon: "🔊", tint: "#34D399", tagline: "Browser speech — no API key needed", cats: ["Creativity & 3D"], kind: "builtin",
+    about: "The CEO speaks replies using the device's neural voices. Free forever, works offline of any TTS provider.",
+    powers: "AI CEO", tools: [] },
+  { id: "wa-composer", name: "WhatsApp Composer", icon: "🟢", tint: "#25D366", tagline: "Real messages via wa.me — no API needed", cats: ["Featured", "Productivity"], kind: "builtin",
+    about: "Composes real WhatsApp messages and opens them in your app, ready to send. Works today with zero setup.",
+    powers: "Alpha squad, Account Manager", tools: ["compose_whatsapp"] },
+  { id: "email-composer", name: "Email Composer", icon: "✉️", tint: "#FBBF24", tagline: "Pre-filled emails in your mail app", cats: ["Productivity"], kind: "builtin",
+    about: "Drafts complete emails (to, subject, body) and opens them in your real mail app. Bulk automation needs an email service key.",
+    powers: "Alpha + Delta squads", tools: ["compose_email"] },
+  { id: "live-feed", name: "Live Feed", icon: "📡", tint: "#F472B6", tagline: "Truthful log of everything the fleet does", cats: ["Productivity"], kind: "builtin",
+    about: "Every chat, task move, invoice, message and agent action lands here in real time.",
+    powers: "Whole fleet", tools: [] },
+  { id: "mcp-tools", name: "MCP Tool System", icon: "🧰", tint: "#06B6D4", tagline: "13 governed tools · 6-gate executor", cats: ["Developer Tools", "Featured"], kind: "builtin",
+    about: "The backend tool registry with squad budgets, approval gates for sensitive actions, and a live execution log. External MCP clients can discover it at /api/mcp/discover.",
+    powers: "All squads (budget-governed)", tools: ["web_search", "study_topic", "send_whatsapp_message", "send_instagram_dm", "create_lead", "update_lead_status", "record_transaction", "draft_invoice", "create_task", "complete_task", "self_edit_code", "query_analytics", "test_connector"] },
+
+  /* ---- Key-based (installed when the key is set) ---- */
+  { id: "groq", name: "Groq AI Engine", icon: "⚡", tint: "#F55036", tagline: "The brain powering all 60 agents", cats: ["Featured", "Developer Tools"], kind: "key",
+    isOn: (S) => Boolean(S.groqKey),
+    about: "Every agent's work runs through Groq's fast models with an automatic fallback chain (GPT-OSS 120B → Qwen 3.6 → Kimi K2 → Llama 4 Scout).",
+    steps: ["Open the AI CEO tab → Settings", "Paste a key from console.groq.com (free tier works)", "The whole fleet lights up instantly"],
+    powers: "All 60 agents", tools: ["web_search", "study_topic"] },
+  { id: "elevenlabs", name: "ElevenLabs Voice", icon: "🎙️", tint: "#E9E4FB", tagline: "Studio-grade voice for the AI CEO", cats: ["Creativity & 3D"], kind: "key",
+    isOn: (S) => Boolean(S.elKey),
+    about: "Premium neural voices for CEO replies. Without a key, the free browser voice takes over automatically.",
+    steps: ["Get a key at elevenlabs.io", "AI CEO tab → Settings → paste it", "Pick a voice (Rachel, Grace, Bella, Elli)"],
+    powers: "AI CEO", tools: [] },
+  { id: "github-edit", name: "GitHub Self-Edit", icon: "🐙", tint: "#C9D1D9", tagline: "The CEO improves this app itself", cats: ["Developer Tools"], kind: "key", scrollTo: "vault-github",
+    isOn: (S) => Boolean(S.github && S.github.token && S.github.connectedAt),
+    about: "Ask the CEO for a change and it edits this Command Center's code and publishes deliverables to /published. Human-approved flow, max 3 files per commit.",
+    steps: ["Create a fine-grained token at github.com/settings/personal-access-tokens", "Repo access: this repo only · Contents: Read and write", "Paste it in the GitHub card below → Test connection"],
+    powers: "Web Developer, Integration Specialist, AI Prompt Engineer", tools: ["self_edit_code"] },
+  { id: "whatsapp-api", name: "WhatsApp Business API", icon: "📱", tint: "#25D366", tagline: "Full automation for client messaging", cats: ["Productivity", "Finance"], kind: "key", scrollTo: "vault-whatsapp",
+    isOn: (S) => Boolean(S.integrations && S.integrations.whatsapp && S.integrations.whatsapp.token && S.integrations.whatsapp.phoneNumberId),
+    about: "Real automated sending through Meta's Cloud API — agents fire actual WhatsApp messages via /api/send once the keys are in the vault. Honest rule: free-form texts only inside the 24-hour customer-service window; otherwise an approved template is required. The wa.me composer stays as the zero-setup fallback.",
+    steps: ["Create a Meta app at developers.facebook.com → add the WhatsApp product", "Copy the Access Token (make it permanent via System Users) + Phone Number ID", "Paste both in the WhatsApp card below → Send for real"],
+    powers: "Cold Outreach, WhatsApp Bot, Sales Closer", tools: ["send_whatsapp_message", "compose_whatsapp"] },
+  { id: "telegram-bot", name: "Telegram Bot", icon: "📨", tint: "#229ED9", tagline: "Free instant messages to the CEO's phone — works today", cats: ["Featured", "Productivity"], kind: "key", scrollTo: "vault-telegram",
+    isOn: (S) => Boolean(S.integrations && S.integrations.telegram && S.integrations.telegram.botToken && S.integrations.telegram.chatId),
+    about: "The fastest real channel in the whole centre: free forever, no Meta approval, messages land in seconds. Once connected, ask the AI CEO 'send me a Telegram' and it actually arrives — alerts, study results, morning briefs.",
+    steps: ["In Telegram open @BotFather → /newbot → copy the token", "Send any message to your new bot, then open @userinfobot → copy Your ID", "Paste both in the Telegram card below → Send test message"],
+    powers: "WhatsApp Bot, Account Manager, Process Automation", tools: ["send_telegram"] },
+  { id: "voice-calls", name: "AI Voice Calls", icon: "📞", tint: "#F472B6", tagline: "The centre places real phone calls — the Jarvis moment", cats: ["Featured", "Productivity"], kind: "key", scrollTo: "vault-call",
+    isOn: (S) => Boolean(S.integrations && S.integrations.call && S.integrations.call.apiKey),
+    about: "Real outbound calls with an AI voice on the line. Vapi = your own scripted assistant; Bland = one key, describe the call in plain English. Honest cost: both are paid per minute — the card in the vault says so plainly.",
+    steps: ["Vapi: copy API key + assistant ID + outbound phone number ID from vapi.ai", "or Bland: copy one API key from bland.ai", "Paste in the AI Voice Calls card below → Call me now"],
+    powers: "Sales Closer, Cold Outreach, Appointment Scheduler", tools: ["make_call"] },
+  { id: "instagram-api", name: "Instagram Graph API", icon: "📸", tint: "#E1306C", tagline: "DMs and publishing for @qimmah.digital", cats: ["Productivity"], kind: "key", scrollTo: "vault-instagram",
+    isOn: (S) => Boolean(S.integrations && S.integrations.instagram && S.integrations.instagram.token),
+    about: "Automated Instagram DMs and insights via Meta. Needs a verified Business account and app review.",
+    steps: ["Add the Instagram Graph API product to your Meta app", "Create a long-lived token via Graph API Explorer", "Paste token + App ID + App Secret below"],
+    powers: "Instagram Lead Gen, Social Media Manager", tools: ["send_instagram_dm"] },
+  { id: "video-host", name: "Video Hosting", icon: "▶️", tint: "#FF0000", tagline: "YouTube / Vimeo / S3 for client video", cats: ["Creativity & 3D"], kind: "key", scrollTo: "vault-video",
+    isOn: (S) => Boolean(S.integrations && S.integrations.video && S.integrations.video.key),
+    about: "Connect a video platform so the Video Editor's output has somewhere real to live.",
+    steps: ["YouTube: API key at console.cloud.google.com (enable YouTube Data API v3)", "Vimeo: developer.vimeo.com → generate access token", "Paste it in the Video card below"],
+    powers: "Video Editor, Social Media Manager", tools: [] },
+  { id: "supabase", name: "Supabase Backend", icon: "🗄️", tint: "#34D399", tagline: "Real database for leads, goals, executions", cats: ["Developer Tools"], kind: "key",
+    isOn: (S) => Boolean(S.backendOn),
+    about: "The server-side brain: MCP executions, approvals, goals and sessions persist here. Set the env vars in Vercel and run the 3 schema SQL files.",
+    steps: ["Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY + JWT_SECRET in Vercel", "Run backend/schema.sql, schema-mcp.sql, schema-goals.sql in Supabase", "Sign in — the Backend pill on Overview turns green"],
+    powers: "Whole fleet (persistence)", tools: ["query_analytics", "record_transaction"] },
+
+  /* ---- Free / external, work today ---- */
+  { id: "world-bank", name: "World Bank Data", icon: "🌍", tint: "#60A5FA", tagline: "Oman & GCC economic indicators, free", cats: ["Research", "Finance"], kind: "free",
+    about: "29,000+ development indicators — GDP, population, trade — for market sizing briefs. Free public API, no key.",
+    steps: ["Ask the CEO: 'study Oman's economy using World Bank data'"],
+    powers: "Market Research, Financial Analyst", tools: ["web_search", "study_topic"] },
+  { id: "academic", name: "Academic Data", icon: "🎓", tint: "#3B82F6", tagline: "Scholarly search for deep briefs", cats: ["Research"], kind: "free",
+    about: "Papers, citations and author profiles for evidence-backed strategy work. Free scholarly search engines.",
+    steps: ["Ask the CEO to study a topic — sources are saved automatically"],
+    powers: "Gamma squad", tools: ["study_topic", "web_search"] },
+  { id: "context7", name: "Context7 Docs", icon: "📚", tint: "#10B981", tagline: "Up-to-date library documentation", cats: ["Developer Tools"], kind: "free",
+    about: "Live documentation lookup for the frameworks this app is built on — keeps code work accurate.",
+    steps: ["Ask the Web Developer agent for code — it researches current docs first"],
+    powers: "Web Developer, AI Prompt Engineer", tools: ["web_search", "study_topic"] },
+  { id: "ai-security-hub", name: "AI Security Hub", icon: "🛡️", tint: "#F43F5E", tagline: "LLM · MCP · RAG · agent security payloads & cheat sheets", cats: ["Research", "Developer Tools", "Featured"], kind: "free",
+    about: "A curated open-source knowledge base for AI security — prompt-injection payloads, LLM/RAG/MCP/agent security cheat sheets, hands-on labs and CTF challenges (github.com/sonuoffsec/AI-Security-Hub). The Security Auditor, Tech Researcher and AI Prompt Engineer are trained to consult it before any AI-security work.",
+    steps: ["Already taught to the security-adjacent agents — they consult it before audits", "Ask the CEO: 'study the AI Security Hub repo' — the brief lands in the knowledge base", "Browse github.com/sonuoffsec/AI-Security-Hub for the raw payloads, labs and cheat sheets"],
+    powers: "Security Auditor, Tech Researcher, AI Prompt Engineer, Integration Specialist", tools: ["web_search", "study_topic", "deliver_work"] },
+
+  /* ---- Agent arsenal — the 7 GitHub repos that save months of agent building.
+     Each card is honest: what the Command Center already covers natively,
+     and what genuinely needs an external runtime. ---- */
+  { id: "browser-use", name: "Browser Use", icon: "🌐", tint: "#38BDF8", tagline: "AI agent that drives a real browser — clicks, forms, workflows", cats: ["Developer Tools", "Featured"], kind: "free",
+    about: "browser-use/browser-use lets an agent open a real browser, click elements, fill forms and run multi-step web workflows. Honest limit: it needs a Python runtime, so it can't run inside this static web app — the Command Center's equivalent today is Groq Compound live web research + approval-gated sending. Real browser automation is the strongest candidate for the future backend.",
+    steps: ["Covered today: Study Mode + agents research the live web via Groq Compound", "True browser control needs a server — on the backend roadmap (Supabase + worker)", "Browse github.com/browser-use/browser-use for the framework"],
+    powers: "Web Developer, Integration Specialist (when the backend lands)", tools: ["web_search", "study_topic"] },
+  { id: "agent-memory", name: "Agent Memory", icon: "🧠", tint: "#A78BFA", tagline: "Persistent memory — agents learn every session, never restart", cats: ["Developer Tools"], kind: "free",
+    about: "The 'memory that types back' pattern: episodic + semantic memory so agents improve across sessions. Covered natively: the CEO knowledge base (every Study Mode brief), remember_fact long-term memory, extracted insights, and Export Brain snapshots — the fleet's memory persists on this device and restores from backup.",
+    steps: ["Already native — every study brief, remembered fact and insight persists", "Export Brain = full memory snapshot to disk", "Compare patterns at the agent-memory repos on GitHub"],
+    powers: "AI CEO + all squads", tools: ["remember_fact", "study_topic"] },
+  { id: "scientific-skills", name: "Scientific Agent Skills", icon: "🔬", tint: "#34D399", tagline: "163 ready-made skills · 100+ databases (K-Dense)", cats: ["Research", "Developer Tools"], kind: "free",
+    about: "K-Dense's Scientific Agent Skills — 163 curated skills and 100+ databases on the open Agent Skills standard. The Command Center's equivalents: the 60-agent toolkit, plugin catalog and study_topic research briefs. The repo is the reference for packaging new skills if the fleet ever adopts the standard.",
+    steps: ["Covered today: study_topic + the 60-agent toolkit", "Ask the CEO to study 'Scientific Agent Skills (K-Dense)' for the full pattern review"],
+    powers: "Gamma squad, Training Coordinator", tools: ["study_topic", "web_search"] },
+  { id: "diagram-design", name: "Diagram Design", icon: "📊", tint: "#F472B6", tagline: "Editorial-quality architecture & flow diagrams as code", cats: ["Creativity & 3D", "Developer Tools"], kind: "free",
+    about: "Diagram-as-code patterns for coding agents — clean architecture, flow, funnel and process diagrams instead of ASCII art. Now taught to all design agents: deliver diagrams as Mermaid or hand-built SVG at editorial quality.",
+    steps: ["Already taught to design agents — ask the Web Developer or Graphic Designer for a diagram", "Reference patterns live in the Diagram Design repo"],
+    powers: "Web Developer, Graphic Designer, UI/UX Designer", tools: ["deliver_work", "web_search"] },
+  { id: "cybersec-skills", name: "Cybersecurity Skills ×818", icon: "🔐", tint: "#EF4444", tagline: "818 security skills · MITRE ATT&CK · NIST CSF · ATLAS", cats: ["Developer Tools", "Research"], kind: "free",
+    about: "mukul975/Anthropic-Cybersecurity-Skills — 818 production-grade security skills mapped to MITRE ATT&CK, NIST CSF 2.0, ATLAS, D3FEND, AI RMF and the F3 fraud framework. Added to the security agents' reference base alongside the AI Security Hub — findings cite the framework and technique they checked against.",
+    steps: ["Already taught to Security Auditor + 3 more agents", "Run a Security Auditor task — findings cite MITRE/NIST categories"],
+    powers: "Security Auditor, Tech Researcher, Integration Specialist, AI Prompt Engineer", tools: ["web_search", "study_topic", "deliver_work"] },
+  { id: "harness-engineering", name: "Awesome Harness Engineering", icon: "🧬", tint: "#FBBF24", tagline: "Patterns & templates for reliable agent harnesses", cats: ["Developer Tools"], kind: "free",
+    about: "Curated resources, patterns and templates for building reliable AI agent harnesses — the discipline this Command Center itself is built on (tool registry, approval gates, budgets, honest-status plugins). A reference read for the founder, not a runtime dependency.",
+    steps: ["Ask the CEO to study it — the brief lands in the knowledge base", "Compare its patterns against our MCP tool system and 6-gate executor"],
+    powers: "Integration Specialist, AI Prompt Engineer", tools: ["study_topic"] },
+  { id: "open-viking", name: "Open Viking", icon: "⚔️", tint: "#94A3B8", tagline: "Context database — resources, memory & skills as directories", cats: ["Developer Tools"], kind: "free",
+    about: "Open Viking organizes an agent's context (resources, memory, skills) into browsable directories agents can search. The Command Center's equivalent: buildSnapshot injects live business state into every agent call, and the knowledge base + results feed give the fleet shared context. The repo is the reference if context ever moves to a real database.",
+    steps: ["Covered today: buildSnapshot + knowledge base on every agent call", "Real context database arrives with the Supabase backend"],
+    powers: "Whole fleet (context)", tools: ["query_analytics", "study_topic"] },
+
+  /* ---- Self-hosted automation engines — the free n8n alternatives (CEO study).
+     Each runs OUTSIDE this app — one docker compose up on a $5 VPS or a
+     Raspberry Pi — and adds the one thing a browser app can't do alone: 24/7
+     fire-and-forget automation. The bridge is always a webhook: Webhook
+     trigger → Send Message action → copy the URL → fire it from a Siri
+     Shortcut, a browser bookmark or curl. ---- */
+  { id: "activepieces", name: "Activepieces", icon: "🔁", tint: "#8B5CF6", tagline: "Top pick — 400+ integrations · MIT, free forever", cats: ["Featured", "Productivity", "Developer Tools"], kind: "free",
+    about: "The best all-round n8n alternative (github.com/activepieces/activepieces · ~24k stars · MIT — free even commercially). A flow is Webhook trigger → Send Message, covering Telegram, WhatsApp, Slack, Discord, Gmail and SMS. Self-host once with docker compose and every run is free — no per-task pricing.",
+    steps: ["docker compose up on any VPS — running in ~15 minutes", "Flow: Webhook trigger → Send Message (Telegram / WhatsApp / email…)", "Copy the webhook URL — fire it from a Siri Shortcut, bookmark or curl", "Ask the CEO: 'study Activepieces' — the setup brief lands in the knowledge base"],
+    powers: "Process Automation, Integration Specialist, WhatsApp Bot", tools: ["compose_whatsapp", "compose_email"] },
+  { id: "automatisch", name: "Automatisch", icon: "🚀", tint: "#3B82F6", tagline: "Simplest setup — live in under 10 minutes", cats: ["Productivity"], kind: "free",
+    about: "The lean option (github.com/automatisch/automatisch · ~14k stars · AGPL-3.0 self-hosted). 100+ built-in integrations with webhook triggers via plain HTTP POST; light enough to run on a $5/month VPS for low volume.",
+    steps: ["docker compose up — the fastest setup of the four", "Trigger any flow with a plain HTTP POST to its webhook URL", "Best when you want a handful of simple automations, not a platform"],
+    powers: "Process Automation, Email Automation", tools: ["compose_email", "compose_whatsapp"] },
+  { id: "node-red", name: "Node-RED", icon: "🔴", tint: "#EF4444", tagline: "The classic — runs on anything, even a Raspberry Pi", cats: ["Developer Tools"], kind: "free",
+    about: "The veteran flow editor (github.com/node-red/node-red · 23k+ stars · Apache 2.0). Its HTTP-in node IS a webhook — any request starts the flow — and 4,000+ community nodes cover Telegram, Slack, WhatsApp, email, SMS and MQTT. Runs on a Raspberry Pi, an old laptop, a VPS or Docker.",
+    steps: ["Drop in an HTTP-in node — that URL is your webhook", "Wire it to any of the 4,000+ messaging nodes", "Best for tinkerers who want maximum flexibility"],
+    powers: "Integration Specialist, Tech Researcher", tools: ["web_search", "study_topic"] },
+  { id: "sim-ai", name: "Sim (AI Workflows)", icon: "🤖", tint: "#22D3EE", tagline: "AI-native flows — local LLMs via Ollama, no keys", cats: ["Developer Tools", "Productivity"], kind: "free",
+    about: "The newest option (github.com/simstudioai/sim · open source): an n8n-style drag-and-drop builder that is AI-native — it connects to OpenAI, Claude or fully local models via Ollama, with 60+ integrations including Telegram, Slack, Gmail and Notion. Best when the message itself should be AI-written on the way out.",
+    steps: ["Webhook trigger starts the flow from anywhere", "Add an AI step — the message is written by the model, then sent", "Run local models via Ollama: zero API keys needed"],
+    powers: "AI Prompt Engineer, Process Automation, Integration Specialist", tools: ["study_topic", "web_search"] },
+
+  /* ---- Design training library (free external sources — taught to all design agents) ---- */
+  { id: "refero", name: "Refero DESIGN.md", icon: "🎨", tint: "#A78BFA", tagline: "2,000+ AI-readable design systems from real sites", cats: ["Creativity & 3D", "Developer Tools", "Featured"], kind: "free",
+    about: "Every leading website distilled into a DESIGN.md: exact colors, typography, spacing rhythm, component rules. Agents design from evidence, not vibes — paste a reference system, then build.",
+    steps: ["Already taught to all design agents — they study it before any visual work", "Browse styles.refero.design to pick a style yourself"],
+    powers: "UI/UX Designer, Web Developer, Graphic Designer, Landing Pages", tools: ["study_topic", "web_search", "deliver_work"] },
+  { id: "mobbin", name: "Mobbin", icon: "📱", tint: "#34D399", tagline: "1,400+ real apps · 620k screens · 320k flows", cats: ["Creativity & 3D", "Research"], kind: "free",
+    about: "The world's largest UI/UX reference library. Real screens and complete user flows from top apps — onboarding, checkout, paywalls, profiles. Agents study proven patterns instead of inventing layouts.",
+    steps: ["Taught to design agents as their pattern library", "Free plan at mobbin.com — browse the latest apps"],
+    powers: "UI/UX Designer, App Developer, Web Developer", tools: ["web_search", "study_topic"] },
+  { id: "supahero", name: "SupaHero", icon: "🦸", tint: "#FBBF24", tagline: "Curated hero sections from top websites", cats: ["Creativity & 3D"], kind: "free",
+    about: "A handpicked library of stunning website hero sections. The first screen decides if a visitor stays — agents study how the best sites structure headline, CTA and visual hierarchy.",
+    steps: ["Taught to Landing Pages + Web Developer agents", "Browse supahero.io for hero inspiration"],
+    powers: "Landing Pages, Web Developer, UI/UX Designer", tools: ["web_search", "deliver_work"] },
+  { id: "twentyfirst", name: "21st.dev Components", icon: "🧱", tint: "#60A5FA", tagline: "10,000+ production UI component patterns", cats: ["Developer Tools", "Creativity & 3D"], kind: "free",
+    about: "The 'npm for design engineers' — community-built React/Tailwind components (navbars, pricing, forms, heroes) with AI-ready prompts. Agents build with proven component patterns, not from scratch.",
+    steps: ["Taught to Web Developer + UI/UX agents", "Browse 21st.dev — 2 free component copies daily"],
+    powers: "Web Developer, UI/UX Designer, App Developer", tools: ["deliver_work", "web_search"] },
+  { id: "motion", name: "Motion Animations", icon: "✨", tint: "#F472B6", tagline: "Free MIT animation library — springs, scroll, gestures", cats: ["Creativity & 3D", "Developer Tools"], kind: "free",
+    about: "Production-grade animation (formerly Framer Motion), trusted by Framer and Figma. 430+ copy-paste examples. Agents apply its patterns as GPU-friendly CSS transform/opacity transitions in single-file pages.",
+    steps: ["Taught to all design agents — animate with transform/opacity only", "Docs + examples at motion.dev"],
+    powers: "Web Developer, UI/UX Designer, Video Editor", tools: ["deliver_work", "web_search"] },
+
+  /* ---- Coming soon (honest: needs OAuth we haven't built yet) ---- */
+  { id: "composio", name: "Composio (500+ apps)", icon: "🧩", tint: "#F97316", tagline: "One key → Gmail, Notion, Slack, 500 more", cats: ["Featured", "Developer Tools"], kind: "soon",
+    about: "The fastest route to a Kimi-sized plugin catalog: one Composio API key unlocks 500+ managed-OAuth apps as agent tools. Free tier covers 20k tool calls/month.",
+    steps: ["Recommended next upgrade — researched and ready", "Sign up at composio.dev → one API key", "We wire it in as a single MCP server"] },
+  { id: "notion", name: "Notion", icon: "📝", tint: "#E9E4FB", tagline: "Docs & knowledge base sync", cats: ["Productivity"], kind: "soon",
+    about: "Sync deliverables and knowledge into a Notion workspace. Notion ships a hosted MCP server — we connect when OAuth login lands.",
+    steps: ["Needs OAuth sign-in flow — on the roadmap"] },
+  { id: "gdrive", name: "Google Drive", icon: "📁", tint: "#FBBF24", tagline: "Client files & asset storage", cats: ["Productivity"], kind: "soon",
+    about: "Store and fetch client assets from Drive. Coming with the OAuth connect flow.",
+    steps: ["Needs OAuth sign-in flow — on the roadmap"] },
+  { id: "canva", name: "Canva", icon: "🎨", tint: "#8B5CF6", tagline: "Design templates for client work", cats: ["Creativity & 3D"], kind: "soon",
+    about: "Generate on-brand designs from templates. Canva ships an official MCP server — connectable once OAuth lands.",
+    steps: ["Needs OAuth sign-in flow — on the roadmap"] },
+  { id: "google-ads", name: "Google Ads", icon: "📈", tint: "#34D399", tagline: "Live campaign data & management", cats: ["Finance"], kind: "soon",
+    about: "Pull real campaign performance into Analytics and let the Google Ads agent optimize from live data.",
+    steps: ["Needs a Google Ads developer token + OAuth — on the roadmap"] },
+  { id: "meta-ads", name: "Meta Ads", icon: "📊", tint: "#1877F2", tagline: "Facebook & Instagram ads data", cats: ["Finance"], kind: "soon",
+    about: "Real spend and ROAS from Meta campaigns, feeding the Facebook Ads agent.",
+    steps: ["Needs Meta Marketing API access — on the roadmap"] },
+  { id: "cloudflare", name: "Cloudflare", icon: "☁️", tint: "#F97316", tagline: "CDN, DNS & edge for client sites", cats: ["Developer Tools"], kind: "soon",
+    about: "Manage DNS and caching for client websites from the Command Center.",
+    steps: ["Needs a Cloudflare API token — on the roadmap"] },
+];
+
+export function pluginStatus(p, S) {
+  if (p.kind === "builtin" || p.kind === "free") return "installed";
+  if (p.kind === "key") return p.isOn && p.isOn(S) ? "installed" : "setup";
+  return "soon"; // oauth/soon
+}
+
+/* ============================================================
+   PluginsPanel — the Kimi-style storefront.
+   Rendered at the top of the Integrations Hub.
+   ============================================================ */
+export function PluginsPanel({ S, log }) {
+  const [cat, setCat] = useState("Installed");
+  const [open, setOpen] = useState(null); // plugin id in the detail modal
+
+  const list = PLUGIN_CATALOG.filter((p) => {
+    if (cat === "All") return true;
+    if (cat === "Installed") return pluginStatus(p, S) === "installed";
+    return (p.cats || []).includes(cat);
+  });
+  const installedCount = PLUGIN_CATALOG.filter((p) => pluginStatus(p, S) === "installed").length;
+  const active = open ? PLUGIN_CATALOG.find((p) => p.id === open) : null;
+
+  function statusButton(p) {
+    const st = pluginStatus(p, S);
+    if (st === "installed") return { label: "Use", bg: "rgba(52,211,153,0.14)", color: "#34D399", border: "rgba(52,211,153,0.4)" };
+    if (st === "setup") return { label: "Set up", bg: "rgba(251,191,36,0.12)", color: "#FBBF24", border: "rgba(251,191,36,0.4)" };
+    return { label: "Soon", bg: "rgba(255,255,255,0.06)", color: "#8B86A3", border: "rgba(255,255,255,0.14)" };
+  }
+
+  return (
+    <Card style={{ marginBottom: 18, padding: 0, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ padding: "16px 18px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <Puzzle size={16} style={{ color: CYAN }} />
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#F5F3FF", fontFamily: "'Space Grotesk', sans-serif" }}>Plugins</span>
+          <span style={{ fontSize: 11, color: "#8B86A3" }}>{installedCount} installed · {PLUGIN_CATALOG.length} in catalog</span>
+        </div>
+        <span style={{ fontSize: 10.5, color: "#6B6685" }}>Kimi-style — every card states honestly what works today</span>
+      </div>
+
+      {/* Category tabs */}
+      <div style={{ display: "flex", gap: 6, padding: "4px 18px 12px", overflowX: "auto", scrollbarWidth: "none" }}>
+        {PLUGIN_CATEGORIES.map((c) => (
+          <button key={c} onClick={() => setCat(c)} style={{
+            flexShrink: 0, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+            background: cat === c ? "rgba(124,58,237,0.25)" : "rgba(255,255,255,0.05)",
+            color: cat === c ? "#E9E4FB" : "#8B86A3",
+            border: "1px solid " + (cat === c ? "rgba(124,58,237,0.55)" : "rgba(255,255,255,0.1)"),
+          }}>{c}</button>
+        ))}
+      </div>
+
+      {/* Plugin rows — Kimi list style */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 14px 16px" }}>
+        {list.length === 0 && (
+          <div style={{ fontSize: 12.5, color: "#8B86A3", padding: "14px 6px" }}>Nothing in this category yet.</div>
+        )}
+        {list.map((p) => {
+          const b = statusButton(p);
+          return (
+            <div key={p.id} style={{ ...glass, borderRadius: 14, padding: "11px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{
+                width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 20, background: p.tint + "22", border: "1px solid " + p.tint + "44",
+              }}>{p.icon}</span>
+              <button onClick={() => setOpen(p.id)} style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                <div style={{ fontSize: 14, fontWeight: 650, color: "#F5F3FF" }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: "#8B86A3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.tagline}</div>
+              </button>
+              <button onClick={() => setOpen(p.id)} style={{
+                flexShrink: 0, padding: "7px 16px", borderRadius: 20, fontSize: 12.5, fontWeight: 650, cursor: "pointer", fontFamily: "inherit",
+                background: b.bg, color: b.color, border: "1px solid " + b.border,
+              }}>{b.label}</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail modal */}
+      {active && (
+        <div onClick={() => setOpen(null)} style={{
+          position: "fixed", inset: 0, zIndex: 80, background: "rgba(5,3,10,0.7)",
+          backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...glass, background: "rgba(18,12,30,0.92)", borderRadius: 18, padding: 22, maxWidth: 480, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+              <span style={{ width: 52, height: 52, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, background: active.tint + "22", border: "1px solid " + active.tint + "44", flexShrink: 0 }}>{active.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 17, fontWeight: 700, color: "#F5F3FF" }}>{active.name}</div>
+                <div style={{ fontSize: 12.5, color: "#8B86A3", marginTop: 2 }}>{active.tagline}</div>
+              </div>
+              <button onClick={() => setOpen(null)} style={{ ...btnGhost, padding: "6px 9px" }}><X size={14} /></button>
+            </div>
+
+            <p style={{ fontSize: 13, color: "#C9C4DC", lineHeight: 1.7, margin: "0 0 14px" }}>{active.about}</p>
+
+            {active.powers && (
+              <div style={{ fontSize: 12, color: "#A5A0B8", marginBottom: 12 }}>
+                <span style={{ color: CYAN, fontWeight: 600 }}>Powers: </span>{active.powers}
+              </div>
+            )}
+
+            {active.tools && active.tools.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                {active.tools.map((t) => (
+                  <span key={t} style={{ fontSize: 10.5, fontFamily: "monospace", color: "#A5F3FC", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)", borderRadius: 6, padding: "2px 8px" }}>{t}</span>
+                ))}
+              </div>
+            )}
+
+            {active.steps && active.steps.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: "#8B86A3", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  <Key size={11} /> How to connect
+                </div>
+                {active.steps.map((s, i) => (
+                  <div key={i} style={{ display: "flex", gap: 9, fontSize: 12.5, color: "#C9C4DC", lineHeight: 1.6, marginBottom: 6 }}>
+                    <span style={{ color: PURPLE, fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span> {s}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {pluginStatus(active, S) === "installed" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#34D399", marginBottom: 12 }}>
+                <CheckCircle2 size={13} /> Installed and working today
+              </div>
+            )}
+            {pluginStatus(active, S) === "soon" && (
+              <div style={{ fontSize: 11.5, color: "#FDE68A", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: 10, padding: "9px 12px", lineHeight: 1.6, marginBottom: 12 }}>
+                Honest limits: this one needs OAuth sign-in we haven't built yet. It's on the roadmap — no fake "connected" badge here.
+              </div>
+            )}
+
+            {active.scrollTo && pluginStatus(active, S) === "setup" && (
+              <button style={{ ...btnPrimary, width: "100%", justifyContent: "center" }}
+                onClick={() => {
+                  setOpen(null);
+                  setTimeout(() => {
+                    const el = document.getElementById(active.scrollTo);
+                    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 60);
+                  if (log) log("integration", "Plugin setup opened: " + active.name);
+                }}>
+                Open the setup card <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* Agents that use a given tool — for future "powered by" views. */
+export function agentsUsingTool(toolId) {
+  return AGENTS.filter((a) => toolkitFor(a).tools.includes(toolId))
+    .map((a) => a.code + " " + a.name + " (" + (SQUAD_META[a.squad] || {}).role + ")");
+}
