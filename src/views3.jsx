@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText, Github, Video, ShieldCheck, Activity, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Brain, Download, ExternalLink, Send, Radio, CheckCircle2, Circle, Copy, Sparkles, MessageSquareText, Github, Video, ShieldCheck, Activity, ChevronDown, ChevronRight, Phone, Bot } from "lucide-react";
 import { PURPLE, CYAN, AGENTS, glass, inputStyle, btnPrimary, btnGhost, Card, SectionTitle, Stat, Empty, Field, uid, omr, timeAgo, lastMonths, monthLabel, REVENUE_TARGET, SQUAD_META, SYSTEM_PROMPT, buildSnapshot, aiCall, IN_PREVIEW, BackupControls, TOOL_CATALOG, MCP_LIMITS_NOTE } from "./shared.jsx";
 import { testGhConnection } from "./github-sync.js";
 import { resultMarkdown } from "./autopilot.jsx";
@@ -40,7 +40,7 @@ function Donut({ value, total, color, label }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
       <svg width="110" height="110" viewBox="0 0 110 110">
-        <circle cx="55" cy="55" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
+        <circle cx="55" cy="55" r="42" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
         <circle cx="55" cy="55" r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
           strokeDasharray={c * frac + " " + c} transform="rotate(-90 55 55)" style={{ transition: "stroke-dasharray 0.6s" }} />
         <text x="55" y="60" textAnchor="middle" fontSize="18" fontWeight="700" fill="#F5F3FF" fontFamily="'Space Grotesk', sans-serif">{value}</text>
@@ -551,7 +551,7 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: CYAN, marginBottom: 5 }}>Key points</div>
                     <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>
-                      {e.keyPoints.map((p, i) => <div key={i}>{"\u2022"} {p}</div>)}
+                      {e.keyPoints.map((p, i) => <div key={i}>{"•"} {p}</div>)}
                     </div>
                   </div>
                 )}
@@ -559,7 +559,7 @@ export function Study({ S, up, log, user, exportBrain, exportBackup, importBacku
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 5 }}>Recommended actions</div>
                     <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>
-                      {e.actions.map((a, i) => <div key={i}>{"\u2192"} {a}</div>)}
+                      {e.actions.map((a, i) => <div key={i}>{"→"} {a}</div>)}
                     </div>
                   </div>
                 )}
@@ -626,7 +626,7 @@ function FleetStudyCard({ r, log }) {
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: CYAN, marginBottom: 5 }}>{r.type === "squad-study" ? "Findings & insights" : "Key points"}</div>
           <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>
-            {r.insights.map((p, i) => <div key={i}>{"\u2022"} {p}</div>)}
+            {r.insights.map((p, i) => <div key={i}>{"•"} {p}</div>)}
           </div>
         </div>
       )}
@@ -634,14 +634,14 @@ function FleetStudyCard({ r, log }) {
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#34D399", marginBottom: 5 }}>CEO Brain directives{r.cycleId ? " · " + r.cycleId : ""}</div>
           <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>
-            {Object.entries(r.directives).map(([sq, d]) => <div key={sq}>{"\u2192"} <b style={{ color: (SQUAD_META[sq] || {}).color || "#A78BFA" }}>Squad {sq}:</b> {d}</div>)}
+            {Object.entries(r.directives).map(([sq, d]) => <div key={sq}>{"→"} <b style={{ color: (SQUAD_META[sq] || {}).color || "#A78BFA" }}>Squad {sq}:</b> {d}</div>)}
           </div>
         </div>
       )}
       {r.action && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: "#FFB020", marginBottom: 5 }}>Recommended action</div>
-          <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>{"\u2192"} {r.action}</div>
+          <div style={{ fontSize: 12.5, color: "#D8D3E8", lineHeight: 1.7 }}>{"→"} {r.action}</div>
         </div>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -1039,7 +1039,7 @@ export function McpExecutionLog() {
                   <span style={{ fontSize: 11, color: "#6B6685", flexShrink: 0 }}>{timeAgo(new Date(r.created_at).getTime())}</span>
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: "#E9E4FB", fontFamily: "monospace", background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)", borderRadius: 6, padding: "1px 7px" }}>{r.tool_name}</span>
                   <span style={{ fontSize: 10.5, color: "#6B6685", fontFamily: "monospace" }}>{String(r.agent_id || "—").slice(0, 8)}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: r.success ? "#34D399" : "#F87171" }}>{r.success ? "\u2713" : "\u2717"}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: r.success ? "#34D399" : "#F87171" }}>{r.success ? "✓" : "✗"}</span>
                   <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#8B86A3", flexShrink: 0 }}>
                     {r.latency_ms != null ? r.latency_ms + " ms" : "—"}{" · $" + Number(r.cost || 0).toFixed(4)}
                   </span>
@@ -1060,6 +1060,213 @@ export function McpExecutionLog() {
   );
 }
 
+/* ============================================================
+   REAL-SEND CARDS — Telegram, WhatsApp Cloud API, AI Voice Calls.
+   Every test button fires the /api/send proxy with the keys from
+   the device vault, so the message or call actually happens.
+   Keys leave this device only for that single provider call.
+   ============================================================ */
+function makeSetInteg(up) {
+  return (key, patch) => up((s) => {
+    const cur = { whatsapp: {}, telegram: {}, instagram: {}, call: {}, video: { service: "YouTube" }, ...(s.integrations || {}) };
+    return { ...s, integrations: { ...cur, [key]: { ...(cur[key] || {}), ...patch } } };
+  });
+}
+
+function useSendTest() {
+  const [test, setTest] = useState({ phase: "idle", msg: "" });
+  const fire = async (payload) => {
+    setTest({ phase: "sending", msg: "" });
+    try {
+      const res = await fetch("/api/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* non-JSON reply */ }
+      if (res.ok && data && data.ok) setTest({ phase: "ok", msg: data.detail || "Sent." });
+      else setTest({ phase: "err", msg: (data && data.error) || "Send failed (error " + res.status + ")." });
+    } catch (e) {
+      setTest({ phase: "err", msg: "Could not reach /api/send — make sure the latest deployment is live, then try again." });
+    }
+  };
+  return [test, fire];
+}
+
+function SendTestFeedback({ test }) {
+  if (test.phase === "ok") return <div style={{ fontSize: 12, color: "#34D399", lineHeight: 1.5 }}>{"✅ " + test.msg}</div>;
+  if (test.phase === "err") return <div style={{ fontSize: 12, color: "#F87171", lineHeight: 1.5 }}>{test.msg}</div>;
+  return null;
+}
+
+const vaultGuideStyle = { fontSize: 12, color: "#A5A0B8", lineHeight: 1.6, margin: "0 0 12px" };
+const vaultLinkStyle = { color: CYAN, textDecoration: "none" };
+const vaultDeviceNote = <div style={{ fontSize: 11, color: "#8B86A3", marginTop: 4 }}>🔒 Stored only on this device — never emailed, never sent to our servers.</div>;
+
+function VaultCardTitle({ color, icon, label, statusEl }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color, display: "flex", alignItems: "center", gap: 7 }}>{icon} {label}</div>
+      {statusEl}
+    </div>
+  );
+}
+
+/* TELEGRAM — the free, works-today channel. The CEO says "send me a Telegram"
+   and the message lands on his phone in seconds. */
+function TelegramCard({ S, up, log }) {
+  const tg = { botToken: "", chatId: "", ...((S.integrations || {}).telegram || {}) };
+  const setTg = makeSetInteg(up);
+  const [text, setText] = useState("Marhaba Sultan — your Qimmah Command Centre is connected. Real messages now land here instantly.");
+  const [test, fire] = useSendTest();
+  const configured = Boolean(tg.botToken.trim() && tg.chatId.trim());
+  const ready = configured && text.trim().length > 0;
+
+  return (
+    <div id="vault-telegram">
+    <Card>
+      <VaultCardTitle color="#229ED9" icon={<Bot size={14} />} label="Telegram Bot · free &amp; instant" statusEl={<VaultStatus ok={configured} />} />
+      <p style={vaultGuideStyle}>
+        The fastest real channel — free forever, no approval, works from today.{" "}
+        1. In Telegram open <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={vaultLinkStyle}>@BotFather</a> → /newbot → copy the token.{" "}
+        2. Send any message to your new bot.{" "}
+        3. Open <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" style={vaultLinkStyle}>@userinfobot</a> → copy <b>Your ID</b> (that is the chat ID).
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <VaultInput label="Bot Token" value={tg.botToken} onChange={(v) => setTg("telegram", { botToken: v })} placeholder="123456789:AAE…" />
+        <VaultInput label="Chat ID" type="text" value={tg.chatId} onChange={(v) => setTg("telegram", { chatId: v.trim() })} placeholder="e.g. 8261234567" />
+        <Field label="Test message">
+          <textarea style={{ ...inputStyle, minHeight: 56, resize: "vertical" }} value={text} onChange={(e) => setText(e.target.value)} />
+        </Field>
+        <button style={{ ...btnPrimary, opacity: ready && test.phase !== "sending" ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed" }}
+          disabled={!ready || test.phase === "sending"}
+          onClick={() => { fire({ channel: "telegram", botToken: tg.botToken.trim(), chatId: tg.chatId.trim(), text: text.trim() }); log("integration", "Telegram test message fired to chat " + tg.chatId.trim()); }}>
+          <Send size={14} /> {test.phase === "sending" ? "Sending…" : "Send test message"}
+        </button>
+        <SendTestFeedback test={test} />
+        {!configured && <div style={{ fontSize: 11.5, color: "#8B86A3" }}>Once the token + chat ID are saved, the AI CEO can send you real Telegram messages — just ask in chat: "send me a Telegram when the study finishes".</div>}
+        {vaultDeviceNote}
+      </div>
+    </Card>
+    </div>
+  );
+}
+
+/* WHATSAPP CLOUD API — real sending through Meta. Free-form text works while
+   the 24-hour customer-service window is open; the wa.me composer below stays
+   as the zero-setup fallback. */
+function WhatsAppVaultCard({ S, up, log }) {
+  const wa = { token: "", phoneNumberId: "", ...((S.integrations || {}).whatsapp || {}) };
+  const setWa = makeSetInteg(up);
+  const [to, setTo] = useState("");
+  const [text, setText] = useState("Marhaba! This is the Qimmah Command Centre testing a real WhatsApp send.");
+  const [test, fire] = useSendTest();
+  const configured = Boolean(wa.token.trim() && wa.phoneNumberId.trim());
+  const toDigits = to.replace(/[^0-9]/g, "");
+  const ready = configured && toDigits.length >= 8 && text.trim().length > 0;
+
+  return (
+    <div id="vault-whatsapp">
+    <Card>
+      <VaultCardTitle color="#25D366" icon={<Send size={14} />} label="WhatsApp Cloud API · real send" statusEl={<VaultStatus ok={configured} />} />
+      <p style={vaultGuideStyle}>
+        Create a Meta app at <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={vaultLinkStyle}>developers.facebook.com</a> → add the <b>WhatsApp</b> product.
+        The API Setup panel gives you the Access Token (make it permanent under System Users) and the Phone Number ID.{" "}
+        <b>Honest rule:</b> free-form messages only reach people who messaged you in the last 24 hours — outside that window Meta requires an approved template. The tap-to-send composer below always works.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <VaultInput label="Access Token" value={wa.token} onChange={(v) => setWa("whatsapp", { token: v })} placeholder="EAA…" />
+        <VaultInput label="Phone Number ID" value={wa.phoneNumberId} onChange={(v) => setWa("whatsapp", { phoneNumberId: v })} placeholder="e.g. 123456789012345" />
+        <Field label="Send test to (country code + number)">
+          <input style={inputStyle} inputMode="tel" placeholder="968 9XXX XXXX" value={to} onChange={(e) => setTo(e.target.value)} />
+        </Field>
+        <Field label="Test message">
+          <textarea style={{ ...inputStyle, minHeight: 56, resize: "vertical" }} value={text} onChange={(e) => setText(e.target.value)} />
+        </Field>
+        <button style={{ ...btnPrimary, opacity: ready && test.phase !== "sending" ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed" }}
+          disabled={!ready || test.phase === "sending"}
+          onClick={() => { fire({ channel: "whatsapp", token: wa.token.trim(), phoneNumberId: wa.phoneNumberId.trim(), to: toDigits, text: text.trim() }); log("integration", "WhatsApp Cloud API test fired to +" + toDigits); }}>
+          <Send size={14} /> {test.phase === "sending" ? "Sending…" : "Send for real"}
+        </button>
+        <SendTestFeedback test={test} />
+        {vaultDeviceNote}
+      </div>
+    </Card>
+    </div>
+  );
+}
+
+/* AI VOICE CALLS — the Jarvis moment from the video: the centre places a real
+   phone call and an AI speaks. Vapi = your own scripted assistant; Bland =
+   one key, describe the call in plain English. Both are paid per minute —
+   the card says so plainly. */
+function VoiceCallCard({ S, up, log }) {
+  const vc = { provider: "vapi", apiKey: "", assistantId: "", phoneNumberId: "", ...((S.integrations || {}).call || {}) };
+  const setVc = makeSetInteg(up);
+  const [to, setTo] = useState("");
+  const [task, setTask] = useState("You are the Qimmah Digital assistant calling Sultan for a test. Greet him warmly, tell him the Command Centre voice line is live, and hang up politely.");
+  const [test, fire] = useSendTest();
+  const configured = vc.provider === "bland"
+    ? Boolean(vc.apiKey.trim())
+    : Boolean(vc.apiKey.trim() && vc.assistantId.trim() && vc.phoneNumberId.trim());
+  const toDigits = to.replace(/[^0-9]/g, "");
+  const ready = configured && toDigits.length >= 8 && (vc.provider !== "bland" || task.trim().length > 0);
+
+  const fireCall = () => {
+    const payload = vc.provider === "bland"
+      ? { channel: "call", provider: "bland", apiKey: vc.apiKey.trim(), to: toDigits, task: task.trim() }
+      : { channel: "call", provider: "vapi", apiKey: vc.apiKey.trim(), assistantId: vc.assistantId.trim(), phoneNumberId: vc.phoneNumberId.trim(), to: toDigits };
+    fire(payload);
+    log("integration", "AI voice call fired to +" + toDigits + " via " + vc.provider);
+  };
+
+  return (
+    <div id="vault-call">
+    <Card>
+      <VaultCardTitle color="#F472B6" icon={<Phone size={14} />} label="AI Voice Calls · the Jarvis moment" statusEl={<VaultStatus ok={configured} />} />
+      <p style={vaultGuideStyle}>
+        {vc.provider === "vapi" ? (
+          <span><b>Vapi</b> — your own scripted assistant. At <a href="https://vapi.ai/" target="_blank" rel="noreferrer" style={vaultLinkStyle}>vapi.ai</a>: copy the API key, build an <b>Assistant</b> (the script your AI speaks) and copy its ID, then add a <b>Phone Number</b> with outbound enabled and copy its ID. Honest cost: pay-as-you-go per minute — free trial numbers cannot dial out.</span>
+        ) : (
+          <span><b>Bland AI</b> — the simplest path. At <a href="https://www.bland.ai/" target="_blank" rel="noreferrer" style={vaultLinkStyle}>bland.ai</a> copy one API key, describe the call in plain English below, press Call me now. Honest cost: paid per call — new accounts get trial credits.</span>
+        )}
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <Field label="Provider">
+          <select style={{ ...inputStyle, background: "#1a1327" }} value={vc.provider} onChange={(e) => setVc("call", { provider: e.target.value })}>
+            {["vapi", "bland"].map((v) => <option key={v} value={v} style={{ background: "#1a1327" }}>{v === "vapi" ? "Vapi (own assistant)" : "Bland AI (simplest)"}</option>)}
+          </select>
+        </Field>
+        <VaultInput label="API Key" value={vc.apiKey} onChange={(v) => setVc("call", { apiKey: v })} placeholder={vc.provider === "bland" ? "sk-…" : "Vapi private key"} />
+        {vc.provider === "vapi" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <VaultInput label="Assistant ID" type="text" value={vc.assistantId} onChange={(v) => setVc("call", { assistantId: v.trim() })} placeholder="from the Vapi dashboard" />
+            <VaultInput label="Phone Number ID" type="text" value={vc.phoneNumberId} onChange={(v) => setVc("call", { phoneNumberId: v.trim() })} placeholder="outbound-enabled number" />
+          </div>
+        )}
+        <Field label="Call this number (yours first)">
+          <input style={inputStyle} inputMode="tel" placeholder="968 9XXX XXXX" value={to} onChange={(e) => setTo(e.target.value)} />
+        </Field>
+        {vc.provider === "bland" && (
+          <Field label="What should the AI say?">
+            <textarea style={{ ...inputStyle, minHeight: 56, resize: "vertical" }} value={task} onChange={(e) => setTask(e.target.value)} />
+          </Field>
+        )}
+        <button style={{ ...btnPrimary, opacity: ready && test.phase !== "sending" ? 1 : 0.45, cursor: ready ? "pointer" : "not-allowed" }}
+          disabled={!ready || test.phase === "sending"}
+          onClick={fireCall}>
+          <Phone size={14} /> {test.phase === "sending" ? "Dialing…" : "Call me now"}
+        </button>
+        <SendTestFeedback test={test} />
+        {!configured && <div style={{ fontSize: 11.5, color: "#8B86A3" }}>Once connected, ask the AI CEO in chat: "call me and remind me about the Army Burger proposal" — a real phone call rings your phone.</div>}
+        {vaultDeviceNote}
+      </div>
+    </Card>
+    </div>
+  );
+}
+
 export function Integrations({ S, up, log }) {
   const [wa, setWa] = useState({ phone: "", msg: "" });
   const [em, setEm] = useState({ to: "", subject: "", body: "" });
@@ -1077,18 +1284,14 @@ export function Integrations({ S, up, log }) {
   });
 
   /* Vault state with safe defaults for older saved states. */
-  const integ = { whatsapp: {}, instagram: {}, video: { service: "YouTube" }, ...(S.integrations || {}) };
+  const integ = { whatsapp: {}, telegram: {}, instagram: {}, call: {}, video: { service: "YouTube" }, ...(S.integrations || {}) };
   const gh = { owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...(S.github || {}) };
-  const setInteg = (key, patch) => up((s) => {
-    const cur = { whatsapp: {}, instagram: {}, video: { service: "YouTube" }, ...(s.integrations || {}) };
-    return { ...s, integrations: { ...cur, [key]: { ...(cur[key] || {}), ...patch } } };
-  });
+  const setInteg = makeSetInteg(up);
   const setGh = (patch) => up((s) => ({
     ...s,
     github: { token: "", owner: "taniboy5514-ops", repo: "qimmah-command-center", branch: "main", ...(s.github || {}), ...patch },
   }));
 
-  const waConfigured = Boolean(integ.whatsapp.token && integ.whatsapp.phoneNumberId);
   const igConfigured = Boolean(integ.instagram.token && integ.instagram.appId && integ.instagram.appSecret);
   const videoConfigured = Boolean(integ.video.service && integ.video.key);
 
@@ -1107,35 +1310,33 @@ export function Integrations({ S, up, log }) {
     }
   }
 
-  const vaultCardTitle = (color, icon, label, statusEl) => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color, display: "flex", alignItems: "center", gap: 7 }}>{icon} {label}</div>
-      {statusEl}
-    </div>
-  );
-  const guideStyle = { fontSize: 12, color: "#A5A0B8", lineHeight: 1.6, margin: "0 0 12px" };
-  const linkStyle = { color: CYAN, textDecoration: "none" };
-  const deviceNote = <div style={{ fontSize: 11, color: "#8B86A3", marginTop: 4 }}>🔒 Stored only on this device — never emailed, never sent to our servers.</div>;
-
   const platforms = [
     { name: "Instagram", color: "#E1306C", href: "https://www.instagram.com/accounts/login/", note: "Opens Instagram login. Automated posting and DM replies require the official Instagram Business API via Meta — a verified Business account and app review." },
-    { name: "WhatsApp", color: "#25D366", href: "https://web.whatsapp.com/", note: "Opens WhatsApp Web. The composer below sends real messages through wa.me — works today, no API needed. Full automation requires the WhatsApp Business API." },
+    { name: "WhatsApp", color: "#25D366", href: "https://web.whatsapp.com/", note: "Opens WhatsApp Web. The composer below sends real messages through wa.me — works today, no API needed. Full automation runs through the Cloud API card above." },
     { name: "Facebook", color: "#1877F2", href: "https://business.facebook.com/", note: "Opens Meta Business Suite for page and ads management. Automated publishing requires a Meta developer app with approved permissions." },
     { name: "Email", color: "#FBBF24", href: "https://mail.google.com/", note: "The composer below opens your real mail app with everything pre-filled. Bulk automation requires an email service like Resend or SendGrid." },
   ];
 
   return (
     <div>
-      <SectionTitle eyebrow="Channels" title="Integrations Hub" sub="Every button here does something real. Where official APIs are required, the card says so plainly — no fake 'connected' badges." />
-
-      <McpDiscoveryPanel />
-      <McpExecutionLog />
+      <SectionTitle eyebrow="Channels" title="Integrations Hub" sub="Messaging that actually sends. Every test button fires the real API — Telegram and WhatsApp messages land on phones, the call button rings yours. Where official APIs are required, the card says so plainly — no fake 'connected' badges." />
 
       {/* Security banner — replaces the old "email us your API keys" idea. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, marginBottom: 18, background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.35)", fontSize: 13, color: "#FDE68A" }}>
         <ShieldCheck size={18} style={{ flexShrink: 0, color: "#FBBF24" }} />
         <span><b>Never send API keys by email or DM.</b> Keys stay in this device vault — saved only in this browser's local storage and used only for direct calls to each official API.</span>
       </div>
+
+      {/* REAL SENDING — the three channels that work end-to-end today. */}
+      <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: CYAN, marginBottom: 12 }}>Real sending · messages &amp; calls</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 22 }}>
+        <TelegramCard S={S} up={up} log={log} />
+        <WhatsAppVaultCard S={S} up={up} log={log} />
+        <VoiceCallCard S={S} up={up} log={log} />
+      </div>
+
+      <McpDiscoveryPanel />
+      <McpExecutionLog />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12, marginBottom: 18 }}>
         {platforms.map((p) => (
@@ -1156,38 +1357,27 @@ export function Integrations({ S, up, log }) {
       <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: PURPLE, marginBottom: 12 }}>Credentials vault</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 18 }}>
 
-        <div id="vault-whatsapp">
+        <div id="vault-instagram">
         <Card>
-          {vaultCardTitle("#25D366", <Send size={14} />, "WhatsApp Business API", <VaultStatus ok={waConfigured} />)}
-          <p style={guideStyle}>
-            Create a Meta app at <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={linkStyle}>developers.facebook.com</a> → add the <b>WhatsApp</b> product.
-            The API Setup panel gives you the Access Token (make it permanent under System Users) and the Phone Number ID.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <VaultInput label="Access Token" value={integ.whatsapp.token} onChange={(v) => setInteg("whatsapp", { token: v })} placeholder="EAA…" />
-            <VaultInput label="Phone Number ID" value={integ.whatsapp.phoneNumberId} onChange={(v) => setInteg("whatsapp", { phoneNumberId: v })} placeholder="e.g. 123456789012345" />
-            {deviceNote}
-          </div>
-        </Card>
-
-        <Card>
-          {vaultCardTitle("#E1306C", <ExternalLink size={14} />, "Instagram Graph API", <VaultStatus ok={igConfigured} />)}
-          <p style={guideStyle}>
-            At <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={linkStyle}>developers.facebook.com</a> open your app → add the <b>Instagram Graph API</b> product.
+          <VaultCardTitle color="#E1306C" icon={<ExternalLink size={14} />} label="Instagram Graph API" statusEl={<VaultStatus ok={igConfigured} />} />
+          <p style={vaultGuideStyle}>
+            At <a href="https://developers.facebook.com/" target="_blank" rel="noreferrer" style={vaultLinkStyle}>developers.facebook.com</a> open your app → add the <b>Instagram Graph API</b> product.
             App ID &amp; App Secret are under Settings → Basic; create a long-lived token via Graph API Explorer.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <VaultInput label="Access Token" value={integ.instagram.token} onChange={(v) => setInteg("instagram", { token: v })} placeholder="IGA… / EAA…" />
             <VaultInput label="App ID" value={integ.instagram.appId} onChange={(v) => setInteg("instagram", { appId: v })} placeholder="e.g. 9876543210" />
             <VaultInput label="App Secret" value={integ.instagram.appSecret} onChange={(v) => setInteg("instagram", { appSecret: v })} placeholder="32-character secret" />
-            {deviceNote}
+            {vaultDeviceNote}
           </div>
         </Card>
+        </div>
 
+        <div id="vault-video">
         <Card>
-          {vaultCardTitle(CYAN, <Video size={14} />, "Video Hosting", <VaultStatus ok={videoConfigured} />)}
-          <p style={guideStyle}>
-            <b>YouTube:</b> create an API key at <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" style={linkStyle}>console.cloud.google.com</a> (enable YouTube Data API v3).{" "}
+          <VaultCardTitle color={CYAN} icon={<Video size={14} />} label="Video Hosting" statusEl={<VaultStatus ok={videoConfigured} />} />
+          <p style={vaultGuideStyle}>
+            <b>YouTube:</b> create an API key at <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" style={vaultLinkStyle}>console.cloud.google.com</a> (enable YouTube Data API v3).{" "}
             <b>Vimeo:</b> developer.vimeo.com → My Apps → Generate access token. <b>S3:</b> IAM access key + bucket name.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1198,18 +1388,17 @@ export function Integrations({ S, up, log }) {
             </Field>
             <VaultInput label="API key / token" value={integ.video.key} onChange={(v) => setInteg("video", { key: v })} placeholder="Paste the key or token" />
             <VaultInput label="Project / bucket name" type="text" value={integ.video.project} onChange={(v) => setInteg("video", { project: v })} placeholder="e.g. qimmah-videos" />
-            {deviceNote}
+            {vaultDeviceNote}
           </div>
         </Card>
-
         </div>
 
         <div id="vault-github">
         <Card>
-          {vaultCardTitle("#E9E4FB", <Github size={14} />, "GitHub — self-edit", <VaultStatus ok={Boolean(gh.token && gh.connectedAt)} okText="Connected ✓" />)}
-          <p style={guideStyle}>
+          <VaultCardTitle color="#E9E4FB" icon={<Github size={14} />} label="GitHub — self-edit" statusEl={<VaultStatus ok={Boolean(gh.token && gh.connectedAt)} okText="Connected ✓" />} />
+          <p style={vaultGuideStyle}>
             Lets the AI CEO change this Command Center when you ask. Create a fine-grained token at{" "}
-            <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noreferrer" style={linkStyle}>github.com/settings/personal-access-tokens</a>{" "}
+            <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noreferrer" style={vaultLinkStyle}>github.com/settings/personal-access-tokens</a>{" "}
             — access to <b>this repo only</b>, permission <b>Contents: Read and write</b>.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1225,7 +1414,7 @@ export function Integrations({ S, up, log }) {
             {ghTest.phase === "ok" && <div style={{ fontSize: 12, color: "#34D399" }}>{ghTest.msg}</div>}
             {ghTest.phase === "err" && <div style={{ fontSize: 12, color: "#F87171" }}>{ghTest.msg}</div>}
             {!ghTest.msg && gh.connectedAt && <div style={{ fontSize: 12, color: "#34D399" }}>✓ Connected to {gh.owner}/{gh.repo} ({gh.branch}) · {timeAgo(gh.connectedAt)}</div>}
-            {deviceNote}
+            {vaultDeviceNote}
           </div>
         </Card>
         </div>
@@ -1234,7 +1423,7 @@ export function Integrations({ S, up, log }) {
       <DMGhostwriter S={S} up={up} log={log} />
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Card style={{ flex: "1 1 300px" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#25D366", marginBottom: 12 }}>WhatsApp composer · sends for real</div>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", color: "#25D366", marginBottom: 12 }}>WhatsApp composer · tap-to-send, no API needed</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <Field label="Phone with country code"><input style={inputStyle} inputMode="tel" placeholder="968 9XXX XXXX" value={wa.phone} onChange={(e) => setWa({ ...wa, phone: e.target.value })} /></Field>
             <Field label="Message"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} placeholder="Marhaba! This is Sultan from Qimmah Digital…" value={wa.msg} onChange={(e) => setWa({ ...wa, msg: e.target.value })} /></Field>
