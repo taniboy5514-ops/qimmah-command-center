@@ -10,6 +10,10 @@
  *
  * Session: JWT (JWT_SECRET, 30d) with { userId, workspaceId } in an
  * httpOnly Secure SameSite=Lax cookie named `qimmah_session`.
+ *
+ * Robustness: misconfiguration (missing Supabase env, missing JWT_SECRET,
+ * missing DB schema) is reported as 503 with an explicit reason instead of
+ * a generic 500, so the frontend can tell the owner exactly what to fix.
  */
 import bcrypt from "bcryptjs";
 import { supabase, assertSupabase } from "../../backend/lib/supabase.js";
@@ -65,11 +69,18 @@ function escapeIlike(value) {
   return value.replace(/[\\%_]/g, (m) => "\\" + m);
 }
 
+function notConfigured(res) {
+  return res
+    .status(503)
+    .json({ error: "Supabase is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)" });
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const session = getSession(req);
       if (!session) return res.status(401).json({ error: "Unauthorized" });
+      if (!supabase) return notConfigured(res);
       const { data: user } = await supabase
         .from("users")
         .select("id, name, role, created_at")
@@ -86,6 +97,7 @@ export default async function handler(req, res) {
 
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+    if (!supabase) return notConfigured(res);
     const db = assertSupabase();
     const name = String(req.body?.name || "").trim().slice(0, 60);
     const pin = String(req.body?.pin || "");
@@ -106,7 +118,7 @@ export default async function handler(req, res) {
       .select("id, workspace_id, name, role, pin_hash")
       .ilike("name", escapeIlike(name))
       .limit(5);
-    if (findErr) return res.status(500).json({ error: findErr.message });
+    if (findErr) return res.status(503).json({ error: "database: " + findErr.message });
 
     let user = null;
     for (const c of candidates || []) {
@@ -132,11 +144,14 @@ export default async function handler(req, res) {
         p_user_name: name,
         p_pin_hash: pinHash,
       });
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) return res.status(503).json({ error: "database: " + error.message });
       user = { id: data.user_id, workspace_id: data.workspace_id, name, role: "CEO" };
     }
 
     clearFails(tKey);
+    if (!process.env.JWT_SECRET) {
+      return res.status(503).json({ error: "JWT_SECRET is not set on the server" });
+    }
     const token = signSession({ userId: user.id, workspaceId: user.workspace_id });
     setSessionCookie(res, token);
     return res.status(200).json({
