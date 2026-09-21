@@ -26,6 +26,34 @@
 - On a new device or browser, the app starts fresh (create the owner account again).
 - Use the Backup button (owner only) to download your data as JSON.
 
+## Backend setup (required env vars)
+
+The `/api` backend (login sessions, approvals, goals, MCP log, studies) runs as
+Vercel serverless functions backed by Supabase. If the app shows
+"offline mode — backend not connected", the cause is almost always one of these:
+
+1. **Set the environment variables** in Vercel → Project → Settings → Environment
+   Variables, then **Redeploy** (env changes only apply to new deployments):
+   - `SUPABASE_URL` — your Supabase project URL (https://xxxx.supabase.co)
+   - `SUPABASE_SERVICE_ROLE_KEY` — Supabase service-role key (server only, never in the browser)
+   - `JWT_SECRET` — any long random string (signs the 30-day session cookie)
+   - `GROQ_API_KEY` — free key from console.groq.com/keys (studies, cycles, CEO)
+   - Optional: `MCP_API_KEY`, `CRON_SECRET`
+2. **Run the schema SQL once** in the Supabase SQL editor: `backend/schema.sql`,
+   then `backend/schema-goals.sql` and `backend/schema-mcp.sql`. Without these,
+   the `users` table and the `provision_workspace` function don't exist and
+   login fails with a 503 "database: …" error.
+3. **Disable Vercel Deployment Protection** (or add a bypass) if it is enabled —
+   it turns every `/api/*` answer into a 401 HTML page the app cannot parse.
+
+### Health check
+`GET /api/health` is public and always answers 200 with live status per
+dependency (Supabase configured/reachable, JWT configured, Groq configured).
+Open it in a browser to see exactly what is missing. Vercel cron pings it
+hourly (see `vercel.json`) to keep the functions warm. While the app is in
+offline mode it re-checks `/api/health` every 30 seconds and reconnects
+automatically the moment the backend is healthy again.
+
 ## CEO Brain — Study Mode + Export Brain
 
 ### Study Mode (nav: "CEO Brain")
