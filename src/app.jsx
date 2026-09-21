@@ -85,21 +85,22 @@ async function backendPinLogin(name, pin) {
   }
 }
 
-/* After a failed login/session check, ask the backend self-diagnostic
+/* After a failed login/session check, ask the backend health endpoint
    WHY it is down so the offline banner can name the exact fix. Returns
    a short human sentence (or "" when the API itself is unreachable). */
 async function probeBackendWhy() {
   try {
-    const res = await fetch("/api/mcp/health");
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 6000);
+    const res = await fetch("/api/health", { signal: ctl.signal });
+    clearTimeout(timer);
     if (!res.ok) return "the API answered " + res.status + " — check the Vercel deployment logs";
     const h = await res.json();
-    const missing = Object.entries(h.env || {}).filter(([, v]) => !v).map(([k]) => k);
-    if (missing.length) return "missing in Vercel env: " + missing.join(", ") + " (Settings → Environment Variables, then redeploy)";
-    if (h.supabase && !h.supabase.reachable) return "Supabase is set but unreachable: " + String(h.supabase.error || "connection failed").slice(0, 120);
-    if (h.supabase && h.supabase.tables) {
-      const gone = Object.entries(h.supabase.tables).filter(([, v]) => !v).map(([k]) => k);
-      if (gone.length) return "Supabase tables missing: " + gone.join(", ") + " — run the schema SQL files in the Supabase SQL editor";
-    }
+    const svc = (h && h.services) || {};
+    if (svc.jwt && !svc.jwt.configured) return "missing in Vercel env: JWT_SECRET (Settings → Environment Variables, then redeploy)";
+    if (svc.supabase && !svc.supabase.configured) return "missing in Vercel env: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (Settings → Environment Variables, then redeploy)";
+    if (svc.supabase && svc.supabase.configured && !svc.supabase.reachable) return "Supabase problem: " + String(svc.supabase.detail || "unreachable").slice(0, 120) + " — check the backend/*.sql schemas were run";
+    if (svc.groq && !svc.groq.configured) return "GROQ_API_KEY not set in Vercel env (login works, studies/cycles will fail)";
     return "";
   } catch (e) {
     return ""; // API itself unreachable (bot protection, deploy down) — keep the generic note
@@ -338,6 +339,37 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [!!S]);
 
+  /* Backend auto-recovery — while the app is in offline mode, re-probe
+     /api/health every 30s and flip back online automatically the moment
+     the backend answers healthy (e.g. after env vars are set + redeploy). */
+  useEffect(() => {
+    if (!S || S.backendOn !== false) return;
+    let alive = true;
+    async function check() {
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 6000);
+        const res = await fetch("/api/health", { signal: ctl.signal });
+        clearTimeout(timer);
+        if (!alive) return;
+        if (res.ok) {
+          const h = await res.json().catch(() => null);
+          if (h && h.ok) {
+            up({ backendOn: true, backendWhy: "" });
+            log("system", "Backend is back online — session, approvals and goals are live again");
+          } else if (h) {
+            const why = await probeBackendWhy();
+            if (alive && why) up({ backendWhy: why });
+          }
+        }
+      } catch (e) { /* still down — try again on the next tick */ }
+    }
+    check();
+    const t = setInterval(check, 30000);
+    return () => { alive = false; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!S, S && S.backendOn]);
+
   useEffect(() => {
     if (!S) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -413,8 +445,8 @@ function App() {
               up({ backendOn: true, backendWhy: "" });
               log("system", "Backend session connected — approvals, goals and the MCP log are live");
             } else {
-              const why = r.reason && r.reason !== "unreachable" ? r.reason : await probeBackendWhy();
-              up({ backendOn: false, backendWhy: why || "" });
+              const why = (await probeBackendWhy()) || (r.reason && r.reason !== "unreachable" ? r.reason : "");
+              up({ backendOn: false, backendWhy: why });
             }
           });
         }} />
@@ -436,8 +468,8 @@ function App() {
               up({ backendOn: true, backendWhy: "" });
               log("system", "Backend session connected — approvals, goals and the MCP log are live");
             } else {
-              const why = r.reason && r.reason !== "unreachable" ? r.reason : await probeBackendWhy();
-              up({ backendOn: false, backendWhy: why || "" });
+              const why = (await probeBackendWhy()) || (r.reason && r.reason !== "unreachable" ? r.reason : "");
+              up({ backendOn: false, backendWhy: why });
             }
           });
         }} />
@@ -516,8 +548,9 @@ function App() {
               <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: user.role === "owner" ? "#FBBF24" : "#8B86A3" }}>{user.role}</span>
             </span>
             {S.backendOn === false && (
-              <span style={{ fontSize: 11, color: "#6B6685" }} title="The backend API didn't answer — approvals, goals and the MCP log stay hidden. Everything local keeps working.">
+              <span style={{ fontSize: 11, color: "#6B6685" }} title="The backend API didn't answer — approvals, goals and the MCP log stay hidden. Everything local keeps working. It re-checks every 30s and reconnects automatically.">
                 offline mode — backend not connected
+                {S.backendWhy ? <span style={{ color: "#A5A0B8" }}>{" · " + S.backendWhy}</span> : null}
               </span>
             )}
             {user.role === "owner" && <button style={btnGhost} onClick={() => setShowTeam(!showTeam)}><Users size={13} /> Team</button>}
